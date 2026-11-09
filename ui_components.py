@@ -33,6 +33,12 @@ class Button:
         self.bg_color = bg_color
         self.active = active
         self.hovered = False
+        self._text_surface = self.font.render(
+            self.text, True, COLOR_TEXT_WHITE
+        )
+        self._active_text_surface = self.font.render(
+            self.text, True, (0, 0, 0)
+        )
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEMOTION:
@@ -58,7 +64,7 @@ class Button:
         pygame.draw.rect(surface, color, self.rect, border_radius=7)
         pygame.draw.rect(surface, border_color, self.rect, width=1, border_radius=7)
 
-        text_surf = self.font.render(self.text, True, COLOR_TEXT_WHITE if not self.active else (0, 0, 0))
+        text_surf = self._active_text_surface if self.active else self._text_surface
         text_rect = text_surf.get_rect(center=self.rect.center)
         surface.blit(text_surf, text_rect)
 
@@ -98,11 +104,33 @@ class DataTable:
         self.rows = []
         self.selected_index = -1
         self.scroll_offset = 0
+        self._header_surfaces = []
+        self._row_surfaces = []
 
     def set_data(self, rows):
         self.rows = rows
         self.selected_index = -1
         self.scroll_offset = 0
+        # Text rasterization is expensive relative to blitting. Prepare both
+        # row states once when data changes instead of rendering every frame.
+        self._header_surfaces = [
+            self.font.render(str(name), True, COLOR_ACCENT_CYAN)
+            for name in self.columns
+        ]
+        normal = (210, 220, 230)
+        selected = COLOR_TEXT_WHITE
+        self._row_surfaces = []
+        for row in self.rows:
+            rendered = []
+            for val in row:
+                value = str(val) if val is not None else "-"
+                if len(value) > 28:
+                    value = value[:25] + "..."
+                rendered.append((
+                    self.font.render(value, True, normal),
+                    self.font.render(value, True, selected),
+                ))
+            self._row_surfaces.append(rendered)
 
     def get_selected_row(self):
         if 0 <= self.selected_index < len(self.rows):
@@ -139,8 +167,7 @@ class DataTable:
 
         # Header titles
         curr_x = self.rect.x + 8
-        for col_name, width in zip(self.columns, self.col_widths):
-            h_surf = self.font.render(col_name, True, COLOR_ACCENT_CYAN)
+        for h_surf, width in zip(self._header_surfaces, self.col_widths):
             surface.blit(h_surf, (curr_x, self.rect.y + 6))
             curr_x += width
 
@@ -160,13 +187,9 @@ class DataTable:
                 pygame.draw.rect(surface, (14, 20, 28), row_rect)
 
             curr_x = self.rect.x + 8
-            for val, width in zip(row, self.col_widths):
-                val_str = str(val) if val is not None else "-"
-                # Shorten if too long
-                if len(val_str) > 28:
-                    val_str = val_str[:25] + "..."
-                txt_color = COLOR_TEXT_WHITE if actual_idx == self.selected_index else (210, 220, 230)
-                txt_surf = self.font.render(val_str, True, txt_color)
+            rendered_row = self._row_surfaces[actual_idx]
+            for (normal_surf, selected_surf), width in zip(rendered_row, self.col_widths):
+                txt_surf = selected_surf if actual_idx == self.selected_index else normal_surf
                 surface.blit(txt_surf, (curr_x, y_pos + 5))
                 curr_x += width
 
