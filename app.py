@@ -8,8 +8,23 @@ Integrates all operational views:
   5. Academic DBMS SQL Concept Demonstrator
 """
 
-import pygame
+import os
 import sys
+
+# Tell Windows not to bitmap-scale the application when display scaling is
+# enabled. This keeps Pygame's text and 1px strokes sharp on HiDPI displays.
+if sys.platform == "win32":
+    os.environ.setdefault("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2")
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-monitor aware
+        except (AttributeError, OSError):
+            ctypes.windll.user32.SetProcessDPIAware()
+    except (AttributeError, OSError):
+        pass
+
+import pygame
 from auth import authenticate, has_permission
 from db import fetch_all, fetch_one, execute, transaction
 from validator import validate_runway_assignment
@@ -638,7 +653,7 @@ class AuroraApp:
                     self.report_table.handle_event(event)
             self.draw()
             pygame.display.flip()
-            self.clock.tick(30)
+            self.clock.tick(60)
         pygame.quit()
         sys.exit()
 
