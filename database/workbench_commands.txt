@@ -1,0 +1,114 @@
+================================================================================
+AURORA — MYSQL WORKBENCH & TERMINAL RUN GUIDE FOR EVALUATION / PRESENTATION
+================================================================================
+
+Give this file and `aurora_workbench_full.sql` to your teammate/friend with MySQL Workbench.
+
+--------------------------------------------------------------------------------
+METHOD 1: RUNNING VIA MYSQL WORKBENCH (RECOMMENDED FOR PRESENTATION)
+--------------------------------------------------------------------------------
+1. Launch MySQL Workbench on the laptop.
+2. Under "MySQL Connections", double-click your local connection (e.g. "Local instance MySQL80")
+   and enter your root password.
+3. In the top menu, go to:
+      File  ->  Open SQL Script...  (or press Ctrl + Shift + O)
+4. Browse and select:
+      aurora_workbench_full.sql
+5. Click the yellow Lightning Bolt icon (Execute Entire Script) or press Ctrl + Shift + Enter.
+6. Look at the "Action Output" panel at the bottom:
+   - You should see green checkmarks for all table creations, trigger creations, view creations,
+     and data insertions.
+   - The final output grid will show the row count verification table!
+7. On the left "Navigator" pane:
+   - Click the "Schemas" tab.
+   - Right-click anywhere in the list and click "Refresh All".
+   - You will see `aurora_db` with all 18 Tables, 4 Views, and Stored Objects!
+
+--------------------------------------------------------------------------------
+METHOD 2: RUNNING VIA MYSQL COMMAND LINE TERMINAL
+--------------------------------------------------------------------------------
+Open Command Prompt (cmd) or PowerShell and run:
+
+    mysql -u root -p < "path\to\aurora_workbench_full.sql"
+
+(Enter your MySQL root password when prompted).
+
+Alternatively, from inside the MySQL terminal client:
+
+    mysql -u root -p
+    mysql> source path/to/aurora_workbench_full.sql;
+
+--------------------------------------------------------------------------------
+READY-TO-SHOW DEMONSTRATION QUERIES FOR YOUR PROFESSOR / VIVA PANEL
+--------------------------------------------------------------------------------
+Copy and run these queries inside MySQL Workbench to demonstrate DBMS course concepts:
+
+-- DEMO 1: Show All 18 Created Tables
+USE aurora_db;
+SHOW TABLES;
+
+-- DEMO 2: Real-time Airport Infrastructure Summary (Relational View)
+SELECT * FROM view_airport_infrastructure_summary;
+
+-- DEMO 3: Predefined Scheduled Arrivals with Assigned Runway Vectors (Multi-Table View)
+SELECT * FROM view_scheduled_arrivals;
+
+-- DEMO 4: Unassigned Operations Awaiting Manual Assignment (Outer Anti-Join)
+SELECT 
+    fo.operation_id,
+    f.flight_number,
+    al.airline_name,
+    ap.iata_code AS station_airport,
+    fo.operation_type,
+    fo.scheduled_datetime,
+    fo.operation_status
+FROM flight_operation fo
+JOIN flight f ON fo.flight_id = f.flight_id
+JOIN airline al ON f.airline_id = al.airline_id
+JOIN airport ap ON fo.airport_id = ap.airport_id
+LEFT JOIN runway_assignment ra ON fo.operation_id = ra.operation_id
+WHERE ra.assignment_id IS NULL
+ORDER BY fo.scheduled_datetime ASC;
+
+-- DEMO 5: Aircraft Runway Compatibility Matrix (Ineligible vs Eligible certification)
+SELECT 
+    act.manufacturer,
+    act.model AS aircraft_model,
+    act.aircraft_category,
+    ap.iata_code AS airport_code,
+    rw.runway_designation,
+    rw.runway_length,
+    arc.landing_eligible,
+    arc.takeoff_eligible,
+    arc.remarks
+FROM aircraft_runway_compatibility arc
+JOIN aircraft_type act ON arc.type_id = act.type_id
+JOIN runway rw ON arc.runway_id = rw.runway_id
+JOIN airport ap ON rw.airport_id = ap.airport_id
+ORDER BY act.model, ap.iata_code, rw.runway_designation;
+
+-- DEMO 6: Automatic Database Trigger Audit Trail
+-- Demonstrates how triggers automatically log every insert/update on assignments
+SELECT 
+    aa.audit_id,
+    f.flight_number,
+    fo.operation_type,
+    ap.iata_code AS airport,
+    aa.old_status,
+    aa.new_status,
+    aa.action_type,
+    aa.changed_by,
+    aa.changed_at
+FROM assignment_audit aa
+JOIN flight_operation fo ON aa.operation_id = fo.operation_id
+JOIN flight f ON fo.flight_id = f.flight_id
+JOIN airport ap ON fo.airport_id = ap.airport_id
+ORDER BY aa.changed_at DESC;
+
+-- DEMO 7: Simulating Manual Assignment in MySQL
+-- Assigning Operation 3 (AI-102 TAKEOFF at BOM) to BOM Runway 27 (Direction 12)
+INSERT INTO runway_assignment (operation_id, direction_id, assignment_status, assigned_by, remarks)
+VALUES (3, 12, 'CONFIRMED', 'DISPATCHER_WORKBENCH', 'Manual assignment executed in Workbench');
+
+-- Verify that the trigger immediately recorded the insert in assignment_audit:
+SELECT * FROM assignment_audit ORDER BY audit_id DESC LIMIT 1;
