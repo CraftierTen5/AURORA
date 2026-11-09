@@ -290,3 +290,39 @@ FROM `flight_operation` fo
 WHERE fo.`airport_id` = 1
   AND fo.`scheduled_datetime` BETWEEN '2026-10-15 00:00:00' AND '2026-10-15 23:59:59'
   AND fo.`operation_type` = 'TAKEOFF';
+
+
+-- =============================================================================
+-- CONCEPT 10: APPLICATION RBAC (ROLE-BASED ACCESS CONTROL)
+-- Roles and permissions are many-to-many through role_permission.
+-- The Customer role should have schedule.read only; Administrator has all
+-- application permissions. This is application-level authorization.
+-- =============================================================================
+
+-- Query 10.1: Inspect the permission matrix
+SELECT
+  r.`role_code`,
+  r.`role_name`,
+  p.`permission_code`,
+  p.`permission_name`
+FROM `app_role` r
+JOIN `role_permission` rp ON rp.`role_id` = r.`role_id`
+JOIN `app_permission` p ON p.`permission_id` = rp.`permission_id`
+ORDER BY r.`role_code`, p.`permission_code`;
+
+-- Query 10.2: Customer-facing departure schedule (view abstraction)
+SELECT
+  `flight_number`,
+  `airline_name`,
+  `departure_airport`,
+  `destination_airport`,
+  `scheduled_datetime`,
+  `operation_status`
+FROM `view_scheduled_departures`
+ORDER BY `scheduled_datetime`;
+
+-- Query 10.3: Active application users and their assigned roles
+SELECT u.`username`, r.`role_name`, u.`is_active`, u.`last_login_at`
+FROM `app_user` u
+JOIN `app_role` r ON r.`role_id` = u.`role_id`
+ORDER BY r.`role_code`, u.`username`;

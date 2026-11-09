@@ -1,6 +1,6 @@
 """
-AURORA — Aircraft & Unified Runway Operations Records Archive
-Primary Execution Entry Point
+AURORA — Airport Runway & Operations Management
+Desktop application entry point
 Runs the Pygame Desktop Application.
 """
 

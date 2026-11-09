@@ -1,8 +1,8 @@
 """
-AURORA - Artos 2D Radar Simulation & Airport Map Visualizer
-Faithfully preserves and elevates the Pygame radar engine from ARTOS:
+AURORA - Airport layout and movement visualizer
+Uses airport infrastructure and scheduled operations to render a simplified airport map:
 - Loads airport infrastructure directly from MySQL (aurora_db)
-- Renders runways (thick blue strips), taxiways (cyan lines), and waypoints (red/yellow)
+- Renders runway geometry, taxiway centerlines, amber waypoints and aircraft markers
 - Supports switching between Map 1 (DFW Hub) and Map 2 (BOM Hub)
 - Interactive aircraft telemetry and waypoint route viewer
 """
@@ -12,7 +12,7 @@ import math
 from db import fetch_all, fetch_one
 from ui_components import CompassHUD, COLOR_GRID, COLOR_ACCENT_CYAN, COLOR_RUNWAY_BLUE, COLOR_TEXT_YELLOW
 
-class ArtosRadarView:
+class AirportMapView:
     def __init__(self, rect):
         self.rect = pygame.Rect(rect)
         self.current_airport_id = 1 # 1 = DFW (Map 1), 3 = BOM (Map 2)
@@ -27,7 +27,7 @@ class ArtosRadarView:
             "RADAR: KDFW Ground Transponders Live",
             "SYSTEM: Real-time Database Link Established"
         ]
-        self.load_map_data()
+        # Load map data lazily when an authenticated administrator opens the map.
 
     def set_airport(self, airport_id):
         self.current_airport_id = airport_id
@@ -123,9 +123,9 @@ class ArtosRadarView:
         surface.set_clip(self.rect)
 
         # 1. Background
-        pygame.draw.rect(surface, (0, 0, 0), self.rect)
+        pygame.draw.rect(surface, (17, 28, 40), self.rect)
 
-        # 2. Radar Grid lines (0, 70, 0)
+        # 2. Subtle map grid
         grid_spacing = 35
         for x in range(self.rect.x, self.rect.right, grid_spacing):
             pygame.draw.line(surface, COLOR_GRID, (x, self.rect.y), (x, self.rect.bottom), 1)
@@ -141,16 +141,16 @@ class ArtosRadarView:
         # 3. Draw Apron / Terminal Parking Strip
         apron_start = to_screen(50, 0)
         apron_end = to_screen(150, 1000)
-        pygame.draw.rect(surface, (20, 30, 25), (apron_start[0], self.rect.y, apron_end[0] - apron_start[0], self.rect.height))
+        pygame.draw.rect(surface, (27, 43, 57), (apron_start[0], self.rect.y, apron_end[0] - apron_start[0], self.rect.height))
 
-        # 4. Draw Taxiways (Cyan paths)
+        # 4. Draw taxiway centerlines
         for tw in self.taxiways:
             p1 = to_screen(tw["start_x"], tw["start_y"])
             p2 = to_screen(tw["end_x"], tw["end_y"])
-            pygame.draw.line(surface, COLOR_ACCENT_CYAN, p1, p2, 2)
+            pygame.draw.line(surface, (107, 151, 174), p1, p2, 2)
             # Label
             mid = ((p1[0] + p2[0]) // 2, (p1[1] + p2[1]) // 2)
-            lbl = font_small.render(tw["taxiway_name"], True, COLOR_ACCENT_CYAN)
+            lbl = font_small.render(tw["taxiway_name"], True, (160, 190, 205))
             surface.blit(lbl, (mid[0] + 4, mid[1] - 8))
 
         # 5. Draw Runways (Thick Blue strips)
@@ -166,24 +166,24 @@ class ArtosRadarView:
             lbl = font_small.render(f"RWY {rw['runway_designation']}", True, (255, 255, 255))
             surface.blit(lbl, (mid[0] - 25, mid[1] - 20))
 
-        # 6. Draw Waypoints (Red circles with yellow labels)
+        # 6. Draw infrastructure waypoints
         for wp in self.waypoints:
             p = to_screen(wp["pos_x"], wp["pos_y"])
-            pygame.draw.circle(surface, (255, 0, 0), p, 5)
-            pygame.draw.circle(surface, COLOR_TEXT_YELLOW, p, 2)
-            lbl = font_small.render(wp["feature_name"], True, COLOR_TEXT_YELLOW)
+            pygame.draw.circle(surface, (232, 190, 92), p, 5)
+            pygame.draw.circle(surface, (255, 244, 220), p, 2)
+            lbl = font_small.render(wp["feature_name"], True, (232, 206, 150))
             surface.blit(lbl, (p[0] + 6, p[1] - 6))
 
         # 7. Draw Aircraft Markers
         for ac in self.aircraft_markers:
             p = to_screen(ac["x"], ac["y"])
             is_sel = (self.selected_aircraft == ac)
-            dot_color = (255, 255, 0) if is_sel else (255, 50, 50)
+            dot_color = (75, 178, 132) if is_sel else (220, 110, 105)
 
             # Pulsing target circle
             pygame.draw.circle(surface, dot_color, p, 7 if is_sel else 5)
             if is_sel:
-                pygame.draw.circle(surface, (0, 255, 255), p, 12, 1)
+                pygame.draw.circle(surface, COLOR_ACCENT_CYAN, p, 12, 1)
 
             # Heading vector line
             h_rad = math.radians(ac["heading"])

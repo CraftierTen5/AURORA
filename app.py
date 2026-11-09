@@ -3,14 +3,15 @@ AURORA - Main Desktop Pygame Application
 Integrates all operational views:
   1. Dashboard & Schedule
   2. Manual Runway Assignment & Validation Engine
-  3. Artos 2D Radar Scope (Map 1 & Map 2)
+  3. Airport Map (Map 1 & Map 2)
   4. Fleet & Infrastructure Management
   5. Academic DBMS SQL Concept Demonstrator
 """
 
 import pygame
 import sys
-from db import fetch_all, fetch_one, execute
+from auth import authenticate, has_permission
+from db import fetch_all, fetch_one, execute, transaction
 from validator import validate_runway_assignment
 from ui_components import (
     Button, StatCard, DataTable, ModalDialog,
@@ -18,7 +19,7 @@ from ui_components import (
     COLOR_TEXT_WHITE, COLOR_TEXT_MUTED, COLOR_TEXT_YELLOW,
     COLOR_SUCCESS_GREEN, COLOR_ALERT_RED
 )
-from artos_radar import ArtosRadarView
+from airport_map import AirportMapView
 
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
@@ -28,7 +29,7 @@ class AuroraApp:
         pygame.init()
         pygame.font.init()
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-        pygame.display.set_caption("AURORA — Aircraft & Runway Operations Archive (Artos 2.0 Engine)")
+        pygame.display.set_caption("AURORA | Airport Operations & Departure Information")
         self.clock = pygame.time.Clock()
 
         # Fonts
@@ -38,45 +39,128 @@ class AuroraApp:
         self.font_sub = pygame.font.SysFont("Segoe UI, Arial", 11)
         self.font_card_val = pygame.font.SysFont("Segoe UI, Arial", 24, bold=True)
 
+        # Authentication state. No operational query runs before login.
+        self.current_user = None
+        self.login_username = ""
+        self.login_password = ""
+        self.login_active_field = "username"
+        self.login_message = ""
+        self.login_button = Button((480, 520, 240, 48), "SIGN IN", self.font_hdr,
+                                   on_click=self.on_login, bg_color=(31, 111, 148))
+        self.logout_button = Button((1050, 13, 125, 36), "SIGN OUT", self.font_sub,
+                                    on_click=self.logout)
+
         # State
         self.current_tab = "DASHBOARD"
         self.active_modal = None
         self.stats = {}
 
         # Top Nav Buttons
-        nav_y = 10
-        btn_w = 175
+        nav_y = 13
+        btn_w = 145
         self.nav_buttons = [
-            Button((20 + i * (btn_w + 10), nav_y, btn_w, 36), title, self.font_hdr,
+            Button((250 + i * (btn_w + 10), nav_y, btn_w, 36), title, self.font_hdr,
                    on_click=lambda t=key: self.set_tab(t), active=(key == "DASHBOARD"))
             for i, (title, key) in enumerate([
-                ("1. DASHBOARD", "DASHBOARD"),
-                ("2. RUNWAY ASSIGNMENT", "ASSIGNMENT"),
-                ("3. RADAR SCOPE", "RADAR"),
-                ("4. FLEET & AIRPORTS", "FLEET"),
-                ("5. DBMS SQL REPORTS", "REPORTS")
+                ("OVERVIEW", "DASHBOARD"),
+                ("ASSIGN", "ASSIGNMENT"),
+                ("MAP", "RADAR"),
+                ("FLEET", "FLEET"),
+                ("REPORTS", "REPORTS")
             ])
         ]
 
         # Views & Data
-        self.radar_view = ArtosRadarView((20, 95, WINDOW_WIDTH - 40, WINDOW_HEIGHT - 115))
+        self.customer_table = DataTable((42, 250, WINDOW_WIDTH - 84, WINDOW_HEIGHT - 300),
+                                        ["FLIGHT", "AIRLINE", "FROM", "TO", "SCHEDULED DEPARTURE", "STATUS"],
+                                        [130, 220, 100, 100, 260, 150], self.font_main)
+        self.radar_view = AirportMapView((20, 95, WINDOW_WIDTH - 40, WINDOW_HEIGHT - 115))
         self.init_dashboard_view()
         self.init_assignment_view()
         self.init_fleet_view()
         self.init_reports_view()
 
-        # Refresh Initial Data
-        self.refresh_all_data()
+        # Data is loaded only after an authenticated session is established.
+
+    def on_login(self):
+        try:
+            user = authenticate(self.login_username, self.login_password)
+        except Exception as exc:
+            self.login_message = f"Database unavailable: {exc}"
+            return
+        if not user:
+            self.login_message = "Invalid username or password, or account disabled."
+            self.login_password = ""
+            return
+        self.current_user = user
+        self.login_password = ""
+        self.login_message = ""
+        if user["role_code"] == "ADMIN":
+            self.current_tab = "DASHBOARD"
+            self.refresh_all_data()
+        else:
+            self.refresh_customer_schedule()
+
+    def logout(self):
+        self.current_user = None
+        self.login_username = ""
+        self.login_password = ""
+        self.login_active_field = "username"
+        self.current_tab = "DASHBOARD"
+        self.active_modal = None
+
+    def refresh_customer_schedule(self):
+        rows = fetch_all("""
+            SELECT flight_number, airline_name, departure_airport,
+                   destination_airport, scheduled_datetime, operation_status
+            FROM view_scheduled_departures
+            ORDER BY scheduled_datetime ASC
+        """)
+        self.customer_table.set_data([
+            [r["flight_number"], r["airline_name"], r["departure_airport"],
+             r["destination_airport"], str(r["scheduled_datetime"]), r["operation_status"]]
+            for r in rows
+        ])
+
+    def handle_login_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if pygame.Rect(390, 340, 420, 48).collidepoint(event.pos):
+                self.login_active_field = "username"
+            elif pygame.Rect(390, 410, 420, 48).collidepoint(event.pos):
+                self.login_active_field = "password"
+            else:
+                self.login_button.handle_event(event)
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_TAB:
+                self.login_active_field = "password" if self.login_active_field == "username" else "username"
+            elif event.key == pygame.K_RETURN:
+                self.on_login()
+            elif event.key == pygame.K_BACKSPACE:
+                if self.login_active_field == "username":
+                    self.login_username = self.login_username[:-1]
+                else:
+                    self.login_password = self.login_password[:-1]
+            elif event.key == pygame.K_ESCAPE:
+                self.login_password = ""
+            elif event.unicode.isprintable() and event.unicode:
+                if self.login_active_field == "username" and len(self.login_username) < 60:
+                    self.login_username += event.unicode
+                elif self.login_active_field == "password" and len(self.login_password) < 128:
+                    self.login_password += event.unicode
 
     def set_tab(self, tab_key):
+        if not self.current_user or not has_permission(self.current_user, {
+            "DASHBOARD": "operations.read", "ASSIGNMENT": "assignment.manage",
+            "RADAR": "radar.read", "FLEET": "fleet.read", "REPORTS": "reports.read"
+        }.get(tab_key, "operations.read")):
+            return
         self.current_tab = tab_key
+        active_label = {
+            "DASHBOARD": "OVERVIEW", "ASSIGNMENT": "ASSIGN",
+            "RADAR": "MAP", "FLEET": "FLEET", "REPORTS": "REPORTS"
+        }.get(tab_key)
         for btn in self.nav_buttons:
-            btn.active = (btn.text.endswith(tab_key) or 
-                          (tab_key == "DASHBOARD" and "DASHBOARD" in btn.text) or
-                          (tab_key == "ASSIGNMENT" and "ASSIGNMENT" in btn.text) or
-                          (tab_key == "RADAR" and "RADAR" in btn.text) or
-                          (tab_key == "FLEET" and "FLEET" in btn.text) or
-                          (tab_key == "REPORTS" and "REPORTS" in btn.text))
+            btn.active = btn.text == active_label
         if tab_key == "DASHBOARD":
             self.refresh_dashboard()
         elif tab_key == "ASSIGNMENT":
@@ -123,16 +207,16 @@ class AuroraApp:
     def init_fleet_view(self):
         self.fleet_subtab = "AIRCRAFT"
         self.fleet_buttons = [
-            Button((20, 60, 140, 30), "AIRCRAFT FLEET", self.font_sub,
+            Button((20, 70, 140, 30), "AIRCRAFT FLEET", self.font_sub,
                    on_click=lambda: self.set_fleet_subtab("AIRCRAFT"), active=True),
-            Button((170, 60, 140, 30), "AIRCRAFT TYPES", self.font_sub,
+            Button((170, 70, 140, 30), "AIRCRAFT TYPES", self.font_sub,
                    on_click=lambda: self.set_fleet_subtab("TYPES")),
-            Button((320, 60, 140, 30), "AIRLINES", self.font_sub,
+            Button((320, 70, 140, 30), "AIRLINES", self.font_sub,
                    on_click=lambda: self.set_fleet_subtab("AIRLINES")),
-            Button((470, 60, 140, 30), "AIRPORTS", self.font_sub,
+            Button((470, 70, 140, 30), "AIRPORTS", self.font_sub,
                    on_click=lambda: self.set_fleet_subtab("AIRPORTS"))
         ]
-        self.fleet_table = DataTable((20, 105, WINDOW_WIDTH - 40, WINDOW_HEIGHT - 125), [], [], self.font_main)
+        self.fleet_table = DataTable((20, 112, WINDOW_WIDTH - 40, WINDOW_HEIGHT - 132), [], [], self.font_main)
 
     def set_fleet_subtab(self, subtab):
         self.fleet_subtab = subtab
@@ -143,20 +227,20 @@ class AuroraApp:
     def init_reports_view(self):
         self.current_report_key = "UNASSIGNED"
         self.report_buttons = [
-            Button((20, 60, 220, 30), "1. UNASSIGNED (ANTI-JOIN)", self.font_sub,
+            Button((20, 70, 220, 30), "1. UNASSIGNED (ANTI-JOIN)", self.font_sub,
                    on_click=lambda: self.load_report("UNASSIGNED"), active=True),
-            Button((250, 60, 220, 30), "2. COMPATIBILITY MATRIX", self.font_sub,
+            Button((250, 70, 220, 30), "2. COMPATIBILITY MATRIX", self.font_sub,
                    on_click=lambda: self.load_report("COMPATIBILITY")),
-            Button((480, 60, 220, 30), "3. OPERATOR FLEET AGG", self.font_sub,
+            Button((480, 70, 220, 30), "3. OPERATOR FLEET AGG", self.font_sub,
                    on_click=lambda: self.load_report("OPERATOR_AGG")),
-            Button((710, 60, 220, 30), "4. INFRASTRUCTURE STATS", self.font_sub,
+            Button((710, 70, 220, 30), "4. INFRASTRUCTURE STATS", self.font_sub,
                    on_click=lambda: self.load_report("INFRASTRUCTURE")),
-            Button((940, 60, 220, 30), "5. AUDIT TRAIL LOGS", self.font_sub,
+            Button((940, 70, 220, 30), "5. AUDIT TRAIL LOGS", self.font_sub,
                    on_click=lambda: self.load_report("AUDIT"))
         ]
         self.report_title = "Unassigned Operations (Outer Anti-Join)"
         self.report_sql = "SELECT fo.operation_id, f.flight_number... FROM flight_operation fo LEFT JOIN runway_assignment ra..."
-        self.report_table = DataTable((20, 160, WINDOW_WIDTH - 40, WINDOW_HEIGHT - 180), [], [], self.font_main)
+        self.report_table = DataTable((20, 170, WINDOW_WIDTH - 40, WINDOW_HEIGHT - 190), [], [], self.font_main)
 
     def refresh_all_data(self):
         try:
@@ -426,6 +510,9 @@ class AuroraApp:
     # EVENT HANDLERS
     # =========================================================================
     def on_validate_assignment(self):
+        if not has_permission(self.current_user, "assignment.manage"):
+            self.show_modal("ACCESS DENIED", "Your account cannot manage runway assignments.", False)
+            return
         sel_op = self.assign_op_table.get_selected_row()
         sel_dir = self.assign_dir_table.get_selected_row()
 
@@ -444,6 +531,9 @@ class AuroraApp:
         self.show_modal(title, result.reason, result.is_valid)
 
     def on_confirm_assignment(self):
+        if not has_permission(self.current_user, "assignment.manage"):
+            self.show_modal("ACCESS DENIED", "Your account cannot manage runway assignments.", False)
+            return
         sel_op = self.assign_op_table.get_selected_row()
         sel_dir = self.assign_dir_table.get_selected_row()
 
@@ -453,35 +543,47 @@ class AuroraApp:
 
         op_id = sel_op[0]
         dir_id = sel_dir[0]
-        result = validate_runway_assignment(op_id, dir_id)
-
-        if not result.is_valid:
-            self.show_modal("CANNOT COMMIT INVALID ASSIGNMENT", result.reason, False)
-            return
-
-        # Commit to MySQL
+        # Lock the operation and candidate runway while revalidating and writing.
+        # This closes the previous validate-then-insert race between concurrent users.
         try:
-            existing = fetch_one("SELECT assignment_id FROM runway_assignment WHERE operation_id = %s", (op_id,))
-            if existing:
-                execute("""
-                UPDATE runway_assignment
-                SET direction_id = %s, assignment_status = 'CONFIRMED', assignment_datetime = NOW(), assigned_by = 'PYGAME_ATC'
-                WHERE operation_id = %s
-                """, (dir_id, op_id))
-            else:
-                execute("""
-                INSERT INTO runway_assignment (operation_id, direction_id, assignment_status, assigned_by, remarks)
-                VALUES (%s, %s, 'CONFIRMED', 'PYGAME_ATC', 'Manual assignment validated and saved')
-                """, (op_id, dir_id))
+            with transaction() as cursor:
+                result = validate_runway_assignment(op_id, dir_id, cursor=cursor)
+                if not result.is_valid:
+                    self.show_modal("CANNOT COMMIT INVALID ASSIGNMENT", result.reason, False)
+                    return
+                cursor.execute(
+                    "SELECT assignment_id FROM runway_assignment WHERE operation_id = %s FOR UPDATE",
+                    (op_id,),
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    cursor.execute("""
+                        UPDATE runway_assignment
+                        SET direction_id = %s, assignment_status = 'CONFIRMED',
+                            assignment_datetime = NOW(), assigned_by = %s
+                        WHERE operation_id = %s
+                    """, (dir_id, self.current_user["username"], op_id))
+                else:
+                    cursor.execute("""
+                        INSERT INTO runway_assignment
+                            (operation_id, direction_id, assignment_status, assigned_by, remarks)
+                        VALUES (%s, %s, 'CONFIRMED', %s, 'Manual assignment validated and saved')
+                    """, (op_id, dir_id, self.current_user["username"]))
 
-            self.show_modal("ASSIGNMENT RECORDED", 
-                            f"Runway direction vector {sel_dir[1]} on {sel_dir[2]} confirmed for {sel_op[1]}! Audit log triggered.", True)
+            self.show_modal(
+                "ASSIGNMENT RECORDED",
+                f"Runway direction {sel_dir[1]} on {sel_dir[2]} confirmed for {sel_op[1]}. Audit trigger recorded the change.",
+                True,
+            )
             self.refresh_assignment_data()
             self.refresh_dashboard()
         except Exception as e:
-            self.show_modal("DATABASE ERROR", f"Transaction failed: {e}", False)
+            self.show_modal("DATABASE ERROR", f"Transaction rolled back: {e}", False)
 
     def on_cancel_assignment(self):
+        if not has_permission(self.current_user, "assignment.manage"):
+            self.show_modal("ACCESS DENIED", "Your account cannot manage runway assignments.", False)
+            return
         sel_op = self.assign_op_table.get_selected_row()
         if not sel_op:
             self.show_modal("SELECTION ERROR", "Select an operation on the left to cancel its runway assignment.", False)
@@ -505,18 +607,18 @@ class AuroraApp:
                 if event.type == pygame.QUIT:
                     running = False
                     break
-
-                # Modal takes precedence
+                if not self.current_user:
+                    self.handle_login_event(event)
+                    continue
                 if self.active_modal:
                     self.active_modal.handle_event(event)
                     continue
-
-                # Top Nav
                 for btn in self.nav_buttons:
                     btn.handle_event(event)
-
-                # Route to active view
-                if self.current_tab == "DASHBOARD":
+                self.logout_button.handle_event(event)
+                if self.current_user["role_code"] == "CUSTOMER":
+                    self.customer_table.handle_event(event)
+                elif self.current_tab == "DASHBOARD":
                     self.schedule_table.handle_event(event)
                 elif self.current_tab == "ASSIGNMENT":
                     self.assign_op_table.handle_event(event)
@@ -534,25 +636,77 @@ class AuroraApp:
                     for b in self.report_buttons:
                         b.handle_event(event)
                     self.report_table.handle_event(event)
-
             self.draw()
             pygame.display.flip()
             self.clock.tick(30)
-
         pygame.quit()
         sys.exit()
 
-    def draw(self):
+    def draw_login(self):
         self.screen.fill(COLOR_BG)
+        pygame.draw.rect(self.screen, COLOR_PANEL, (0, 0, WINDOW_WIDTH, 86))
+        brand = self.font_title.render("AURORA", True, COLOR_TEXT_WHITE)
+        tagline = self.font_main.render("AIRPORT OPERATIONS & DEPARTURE INFORMATION", True, COLOR_TEXT_MUTED)
+        self.screen.blit(brand, (56, 22))
+        self.screen.blit(tagline, (190, 29))
+        title = self.font_title.render("Welcome back", True, COLOR_TEXT_WHITE)
+        subtitle = self.font_main.render("Sign in to continue to the airport operations system.", True, COLOR_TEXT_MUTED)
+        self.screen.blit(title, (390, 245))
+        self.screen.blit(subtitle, (390, 278))
+        for label, value, y, active in [
+            ("USERNAME", self.login_username, 340, self.login_active_field == "username"),
+            ("PASSWORD", "*" * len(self.login_password), 410, self.login_active_field == "password")
+        ]:
+            lbl = self.font_sub.render(label, True, COLOR_TEXT_MUTED)
+            self.screen.blit(lbl, (390, y - 22))
+            rect = pygame.Rect(390, y, 420, 48)
+            pygame.draw.rect(self.screen, COLOR_PANEL, rect, border_radius=7)
+            pygame.draw.rect(self.screen, COLOR_ACCENT_CYAN if active else (52, 67, 84), rect, 2, border_radius=7)
+            value_surf = self.font_main.render(value or ("Enter " + label.lower()), True,
+                                                COLOR_TEXT_WHITE if value else COLOR_TEXT_MUTED)
+            self.screen.blit(value_surf, (408, y + 14))
+        self.login_button.draw(self.screen)
+        if self.login_message:
+            msg = self.font_sub.render(self.login_message[:90], True, COLOR_ALERT_RED)
+            self.screen.blit(msg, (390, 585))
+        hint = self.font_sub.render("DEMO ACCOUNTS  |  admin / AuroraAdmin!2026   •   customer / AuroraGuest!2026",
+                                    True, COLOR_TEXT_MUTED)
+        self.screen.blit(hint, (330, 650))
 
-        # Top Bar
-        pygame.draw.rect(self.screen, COLOR_PANEL, (0, 0, WINDOW_WIDTH, 56))
-        pygame.draw.line(self.screen, (35, 50, 70), (0, 56), (WINDOW_WIDTH, 56), 1)
+    def draw_customer(self):
+        self.screen.fill(COLOR_BG)
+        pygame.draw.rect(self.screen, COLOR_PANEL, (0, 0, WINDOW_WIDTH, 70))
+        brand = self.font_title.render("AURORA", True, COLOR_TEXT_WHITE)
+        role = self.font_sub.render("PUBLIC DEPARTURES", True, COLOR_ACCENT_CYAN)
+        self.screen.blit(brand, (32, 18))
+        self.screen.blit(role, (155, 24))
+        self.logout_button.draw(self.screen)
+        heading = self.font_title.render("Departures", True, COLOR_TEXT_WHITE)
+        sub = self.font_main.render("Scheduled takeoffs across the modeled airport network", True, COLOR_TEXT_MUTED)
+        self.screen.blit(heading, (42, 112))
+        self.screen.blit(sub, (42, 148))
+        self.customer_table.draw(self.screen)
+        footer = self.font_sub.render("Schedule information only • Controller tools and infrastructure are restricted",
+                                      True, COLOR_TEXT_MUTED)
+        self.screen.blit(footer, (42, WINDOW_HEIGHT - 28))
 
+    def draw(self):
+        if not self.current_user:
+            self.draw_login()
+            return
+        if self.current_user["role_code"] == "CUSTOMER":
+            self.draw_customer()
+            return
+        self.screen.fill(COLOR_BG)
+        pygame.draw.rect(self.screen, COLOR_PANEL, (0, 0, WINDOW_WIDTH, 62))
+        pygame.draw.line(self.screen, (52, 67, 84), (0, 62), (WINDOW_WIDTH, 62), 1)
+        brand = self.font_title.render("AURORA", True, COLOR_TEXT_WHITE)
+        sub = self.font_sub.render("AIRPORT OPERATIONS", True, COLOR_TEXT_MUTED)
+        self.screen.blit(brand, (20, 9))
+        self.screen.blit(sub, (20, 36))
         for btn in self.nav_buttons:
             btn.draw(self.screen)
-
-        # Draw Active Tab
+        self.logout_button.draw(self.screen)
         if self.current_tab == "DASHBOARD":
             self.draw_dashboard()
         elif self.current_tab == "ASSIGNMENT":
@@ -563,8 +717,6 @@ class AuroraApp:
             self.draw_fleet()
         elif self.current_tab == "REPORTS":
             self.draw_reports()
-
-        # Modal Dialog (if open)
         if self.active_modal:
             self.active_modal.draw(self.screen, self.font_hdr, self.font_main, self.font_hdr)
 
@@ -620,10 +772,10 @@ class AuroraApp:
 
     def draw_radar(self):
         # Airport switch buttons
-        btn_dfw = Button((20, 60, 200, 28), "SCOPE: DFW HUB (MAP 1)", self.font_sub,
+        btn_dfw = Button((20, 70, 200, 28), "DFW HUB", self.font_sub,
                          on_click=lambda: self.radar_view.set_airport(1),
                          active=(self.radar_view.current_airport_id == 1))
-        btn_bom = Button((230, 60, 200, 28), "SCOPE: BOM HUB (MAP 2)", self.font_sub,
+        btn_bom = Button((230, 70, 200, 28), "BOM HUB", self.font_sub,
                          on_click=lambda: self.radar_view.set_airport(3),
                          active=(self.radar_view.current_airport_id == 3))
         btn_dfw.draw(self.screen)
@@ -643,9 +795,9 @@ class AuroraApp:
 
         # Query Title & SQL
         t_surf = self.font_hdr.render(f"SQL DEMONSTRATION: {self.report_title}", True, COLOR_TEXT_YELLOW)
-        self.screen.blit(t_surf, (20, 102))
+        self.screen.blit(t_surf, (20, 110))
 
-        sql_box = pygame.Rect(20, 124, WINDOW_WIDTH - 40, 26)
+        sql_box = pygame.Rect(20, 134, WINDOW_WIDTH - 40, 26)
         pygame.draw.rect(self.screen, (15, 20, 28), sql_box, border_radius=4)
         sql_surf = self.font_sub.render(f"SQL: {self.report_sql[:145]}...", True, COLOR_ACCENT_CYAN)
         self.screen.blit(sql_surf, (sql_box.x + 8, sql_box.y + 6))

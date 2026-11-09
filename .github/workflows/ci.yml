@@ -1,0 +1,89 @@
+name: Python and MySQL checks
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: aurora-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Python modules
+        run: python -m compileall -q .
+      - name: Run isolated unit tests
+        run: python -m unittest discover -s tests -v
+
+  mysql-integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: aurora_ci_password
+          MYSQL_DATABASE: aurora_db
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -paurora_ci_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: aurora_ci_password
+      DB_NAME: aurora_db
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install MySQL client and connector
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-mysql-client
+          python -m pip install mysql-connector-python
+      - name: Build database from the teammate's Workbench script
+        run: mysql --protocol=tcp -h 127.0.0.1 -P 3306 -u root -paurora_ci_password < database/aurora_workbench_full.sql
+      - name: Run database-backed runway validation suite
+        run: python tests/test_validation.py
+      - name: Verify seeded RBAC permissions
+        run: |
+          python - <<'PY'
+          from auth import authenticate, has_permission
+          admin = authenticate("admin", "AuroraAdmin!2026")
+          customer = authenticate("customer", "AuroraGuest!2026")
+          assert admin and admin["role_code"] == "ADMIN"
+          assert customer and customer["role_code"] == "CUSTOMER"
+          assert has_permission(admin, "assignment.manage")
+          assert has_permission(customer, "schedule.read")
+          assert not has_permission(customer, "assignment.manage")
+          print("RBAC integration checks passed")
+          PY
+      - name: Verify database integrity trigger rejects identical endpoints
+        run: |
+          output=$(mysql --protocol=tcp -h 127.0.0.1 -P 3306 -u root -paurora_ci_password aurora_db -e "INSERT INTO flight (flight_number, airline_id, aircraft_id, origin_airport_id, destination_airport_id, service_date) VALUES ('CI-INVALID', 1, 1, 1, 1, '2026-11-09');" 2>&1) && { echo "Invalid same-airport flight was accepted"; exit 1; }
+          echo "$output" | grep -q "A flight origin and destination must be different airports"
+      - name: Verify operational and RBAC table, view and trigger counts
+        run: |
+          tables=$(mysql --protocol=tcp -h 127.0.0.1 -P 3306 -u root -paurora_ci_password -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='aurora_db' AND table_type='BASE TABLE';")
+          views=$(mysql --protocol=tcp -h 127.0.0.1 -P 3306 -u root -paurora_ci_password -N -e "SELECT COUNT(*) FROM information_schema.views WHERE table_schema='aurora_db';")
+          triggers=$(mysql --protocol=tcp -h 127.0.0.1 -P 3306 -u root -paurora_ci_password -N -e "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema='aurora_db';")
+          test "$tables" = "22"
+          test "$views" = "4"
+          test "$triggers" = "5"

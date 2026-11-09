@@ -1,7 +1,7 @@
 """
 AURORA - Automated Test Suite
 Verifies validation rules, constraints, edge cases, and transaction handling.
-Can run against live MySQL (aurora_db) or in test mode.
+Requires the MySQL database initialized by the Workbench installer or setup_db.py.
 """
 
 import sys

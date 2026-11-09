@@ -1,5 +1,5 @@
 # AURORA — Entity-Relationship (ER) Schema Diagram
-### Aircraft & Unified Runway Operations Records Archive
+### Airport Runway & Operations Management
 *MySQL 8.0+ / 8.4 LTS InnoDB Normalized Relational Architecture*
 
 ---
@@ -39,6 +39,10 @@ erDiagram
     RUNWAY_DIRECTION ||--o{ RUNWAY_ASSIGNMENT : "allocated vector"
     
     RUNWAY_ASSIGNMENT ||--o{ ASSIGNMENT_AUDIT : "trigger logged to"
+
+    APP_ROLE ||--o{ APP_USER : "assigned to"
+    APP_ROLE ||--o{ ROLE_PERMISSION : "grants"
+    APP_PERMISSION ||--o{ ROLE_PERMISSION : "included in"
 
     %% Entity definitions with PK and FK
     AIRLINE {
@@ -212,6 +216,34 @@ erDiagram
         int pos_y
     }
 
+    APP_ROLE {
+        int role_id PK
+        string role_code UK
+        string role_name
+    }
+
+    APP_PERMISSION {
+        int permission_id PK
+        string permission_code UK
+        string permission_name
+    }
+
+    ROLE_PERMISSION {
+        int role_id PK, FK
+        int permission_id PK, FK
+    }
+
+    APP_USER {
+        int user_id PK
+        string username UK
+        string password_hash
+        string password_salt
+        int role_id FK
+        boolean is_active
+        datetime created_at
+        datetime last_login_at
+    }
+
     ASSIGNMENT_AUDIT {
         int audit_id PK
         int assignment_id
@@ -245,3 +277,15 @@ erDiagram
 | `AIRCRAFT_TYPE` + `RUNWAY` | `AIRCRAFT_RUNWAY_COMPATIBILITY` | M : N | Composite bridge validating airframe-to-runway suitability. |
 | `RUNWAY` | `RUNWAY_RESTRICTION` | 1 : N | Scheduled closures, maintenance windows, and curfews. |
 | `RUNWAY_ASSIGNMENT` | `ASSIGNMENT_AUDIT` | 1 : N | Audit log populated automatically via MySQL database triggers. |
+
+
+## 3. Application RBAC relationships
+
+The operational model contains 18 base tables. The four additional RBAC relations are `APP_ROLE`, `APP_PERMISSION`, `ROLE_PERMISSION`, and `APP_USER`.
+
+- One role can be assigned to many user accounts.
+- Roles and permissions have a many-to-many relationship resolved by `ROLE_PERMISSION`.
+- Each user references one role; the application resolves that role's permissions before displaying protected controller screens or executing controller actions.
+- The Customer role is seeded with `schedule.read` only. The Administrator role is seeded with all defined permissions.
+
+The role checks protect the desktop application. They do not replace MySQL server-side GRANT privileges if users are given direct database credentials.

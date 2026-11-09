@@ -1,7 +1,7 @@
 -- =============================================================================
 -- AURORA: Seed Data Script
 -- Fictional / Demonstration Dataset for DBMS Academic Demonstration
--- Fully mapped to Artos Pygame 2D Radar layouts (Map 1: DFW & Map 2: BOM)
+-- Fully mapped to AURORA Pygame 2D Radar layouts (Map 1: DFW & Map 2: BOM)
 -- =============================================================================
 
 USE `aurora_db`;
@@ -26,6 +26,49 @@ TRUNCATE TABLE `aircraft`;
 TRUNCATE TABLE `aircraft_type`;
 TRUNCATE TABLE `airline`;
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- RBAC reference data and classroom demo accounts.
+INSERT INTO `app_role` (`role_code`, `role_name`) VALUES
+('ADMIN', 'Administrator / ATC Controller'),
+('CUSTOMER', 'Customer')
+ON DUPLICATE KEY UPDATE `role_name` = VALUES(`role_name`);
+
+INSERT INTO `app_permission` (`permission_code`, `permission_name`) VALUES
+('schedule.read', 'View public departure schedule'),
+('operations.read', 'View all operational schedules'),
+('assignment.manage', 'Create, update and cancel runway assignments'),
+('radar.read', 'View airport radar and map data'),
+('fleet.read', 'View fleet and airport infrastructure'),
+('reports.read', 'View SQL reports and audit history'),
+('users.manage', 'Manage application accounts')
+ON DUPLICATE KEY UPDATE `permission_name` = VALUES(`permission_name`);
+
+INSERT IGNORE INTO `role_permission` (`role_id`, `permission_id`)
+SELECT r.`role_id`, p.`permission_id`
+FROM `app_role` r CROSS JOIN `app_permission` p
+WHERE r.`role_code` = 'ADMIN';
+
+INSERT IGNORE INTO `role_permission` (`role_id`, `permission_id`)
+SELECT r.`role_id`, p.`permission_id`
+FROM `app_role` r JOIN `app_permission` p
+  ON p.`permission_code` = 'schedule.read'
+WHERE r.`role_code` = 'CUSTOMER';
+
+-- Demo only. Change both passwords before any real deployment.
+-- PBKDF2-HMAC-SHA256, 310,000 iterations; passwords are never stored in plaintext.
+INSERT IGNORE INTO `app_user`
+  (`username`, `password_hash`, `password_salt`, `role_id`)
+SELECT 'admin',
+  'f0fe0381097d5cd2c921bd14d8a895280be6d8cfe311e33852991d07ab735f90',
+  'aurora-admin-demo-salt-v1', `role_id`
+FROM `app_role` WHERE `role_code` = 'ADMIN';
+
+INSERT IGNORE INTO `app_user`
+  (`username`, `password_hash`, `password_salt`, `role_id`)
+SELECT 'customer',
+  '7ef5946bf866cbbf9e09e9bbbb10c33a58a2f46a65aaef7a34f21ec7d3548300',
+  'aurora-customer-demo-salt-v1', `role_id`
+FROM `app_role` WHERE `role_code` = 'CUSTOMER';
 
 -- =============================================================================
 -- 1. AIRLINES (4 airlines)
@@ -66,8 +109,8 @@ INSERT INTO `aircraft` (`aircraft_id`, `registration_number`, `type_id`, `owner_
 
 -- =============================================================================
 -- 4. AIRPORTS (3 airports: DFW, LHR, BOM)
--- Airport 1 maps to Artos Map 1 (DFW / Dallas-Fort Worth)
--- Airport 3 maps to Artos Map 2 (BOM / Mumbai Chhatrapati Shivaji)
+-- Airport 1 maps to AURORA Map 1 (DFW / Dallas-Fort Worth)
+-- Airport 3 maps to AURORA Map 2 (BOM / Mumbai Chhatrapati Shivaji)
 -- =============================================================================
 INSERT INTO `airport` (`airport_id`, `airport_name`, `iata_code`, `icao_code`, `city`, `region_state`, `country`, `latitude`, `longitude`, `elevation`, `timezone`, `operating_status`) VALUES
 (1, 'Dallas/Fort Worth International Airport', 'DFW', 'KDFW', 'Dallas-Fort Worth', 'Texas', 'United States', 32.899800, -97.040300, 185.00, 'America/Chicago', 'ACTIVE'),
@@ -76,17 +119,17 @@ INSERT INTO `airport` (`airport_id`, `airport_name`, `iata_code`, `icao_code`, `
 
 -- =============================================================================
 -- 5. RUNWAYS WITH EXACT RADAR COORDINATES
--- Runways 1, 2, 3 correspond to Artos Map 1 geometry (DFW)!
--- Runways 6, 7 correspond to Artos Map 2 geometry (BOM)!
+-- Runways 1, 2, 3 correspond to AURORA Map 1 geometry (DFW)!
+-- Runways 6, 7 correspond to AURORA Map 2 geometry (BOM)!
 -- =============================================================================
 INSERT INTO `runway` (`runway_id`, `airport_id`, `runway_designation`, `runway_length`, `runway_width`, `surface_type`, `true_heading`, `runway_status`, `start_x`, `start_y`, `end_x`, `end_y`, `notes`) VALUES
-(1, 1, '17L/35R', 2591.00, 45.00, 'CONCRETE', 175.00, 'OPEN', 125, 500, 600, 0, 'East parallel runway (Artos Map 1 Runway 1)'),
-(2, 1, '17C/35C', 4085.00, 45.00, 'CONCRETE', 175.00, 'OPEN', 125, 200, 1000, 300, 'Central primary long runway (Artos Map 1 Runway 2)'),
-(3, 1, '18R/36L', 4084.00, 60.00, 'CONCRETE', 185.00, 'OPEN', 125, 120, 1000, 0, 'West long heavy runway (Artos Map 1 Runway 3)'),
+(1, 1, '17L/35R', 2591.00, 45.00, 'CONCRETE', 175.00, 'OPEN', 125, 500, 600, 0, 'East parallel runway (AURORA Map 1 Runway 1)'),
+(2, 1, '17C/35C', 4085.00, 45.00, 'CONCRETE', 175.00, 'OPEN', 125, 200, 1000, 300, 'Central primary long runway (AURORA Map 1 Runway 2)'),
+(3, 1, '18R/36L', 4084.00, 60.00, 'CONCRETE', 185.00, 'OPEN', 125, 120, 1000, 0, 'West long heavy runway (AURORA Map 1 Runway 3)'),
 (4, 2, '09L/27R', 3902.00, 50.00, 'ASPHALT', 90.00, 'OPEN', 200, 350, 900, 350, 'Northern runway at EGLL'),
 (5, 2, '09R/27L', 3660.00, 50.00, 'ASPHALT', 90.00, 'OPEN', 200, 650, 900, 650, 'Southern runway at EGLL'),
-(6, 3, '09/27', 3448.00, 45.00, 'ASPHALT', 92.00, 'OPEN', 800, 600, 100, 200, 'Main primary runway at VABB (Artos Map 2 Runway 9)'),
-(7, 3, '14/32', 2925.00, 45.00, 'ASPHALT', 142.00, 'OPEN', 800, 600, 200, 500, 'Secondary intersecting runway at VABB (Artos Map 2 Runway 10)');
+(6, 3, '09/27', 3448.00, 45.00, 'ASPHALT', 92.00, 'OPEN', 800, 600, 100, 200, 'Main primary runway at VABB (AURORA Map 2 Runway 9)'),
+(7, 3, '14/32', 2925.00, 45.00, 'ASPHALT', 142.00, 'OPEN', 800, 600, 200, 500, 'Secondary intersecting runway at VABB (AURORA Map 2 Runway 10)');
 
 -- =============================================================================
 -- 6. RUNWAY_DIRECTIONS (14 directions total: 2 per physical runway)
@@ -116,7 +159,7 @@ INSERT INTO `runway_direction` (`direction_id`, `runway_id`, `designation`, `hea
 
 -- =============================================================================
 -- 7. TAXIWAYS WITH EXACT RADAR COORDINATES
--- Matches Artos cyan guidance lines
+-- Matches AURORA cyan guidance lines
 -- =============================================================================
 INSERT INTO `taxiway` (`taxiway_id`, `airport_id`, `taxiway_name`, `surface_type`, `taxiway_status`, `start_x`, `start_y`, `end_x`, `end_y`) VALUES
 -- DFW Map 1 Taxiways
@@ -126,7 +169,7 @@ INSERT INTO `taxiway` (`taxiway_id`, `airport_id`, `taxiway_name`, `surface_type
 -- LHR Taxiways
 (4, 2, 'Alpha (A)', 'ASPHALT', 'OPEN', 200, 350, 200, 650),
 (5, 2, 'November (N)', 'ASPHALT', 'OPEN', 900, 350, 900, 650),
--- BOM Map 2 Taxiways (Exact Artos Map 2 geometry)
+-- BOM Map 2 Taxiways (Exact AURORA Map 2 geometry)
 (6, 3, 'Echo (E)', 'ASPHALT', 'OPEN', 800, 600, 800, 400),
 (7, 3, 'Sierra (S)', 'ASPHALT', 'OPEN', 800, 400, 170, 400),
 (8, 3, 'Alpha (A)', 'ASPHALT', 'OPEN', 100, 600, 1000, 600),
@@ -318,37 +361,37 @@ INSERT INTO `runway_restriction` (`restriction_id`, `runway_id`, `restriction_ty
 -- =============================================================================
 INSERT INTO `airport_operating_hours` (`hours_id`, `airport_id`, `day_of_week`, `opening_time`, `closing_time`, `is_closed`) VALUES
 (1, 1, 'MONDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'TUESDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'THURSDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'FRIDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'SATURDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'SUNDAY', '00:00:00', '23:59:59', 0),
-(2, 2, 'MONDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'TUESDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'WEDNESDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'THURSDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'FRIDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'SATURDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'SUNDAY', '06:00:00', '23:30:00', 0),
-(3, 3, 'MONDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'TUESDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'THURSDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'FRIDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'SATURDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'SUNDAY', '00:00:00', '23:59:59', 0);
+(2, 1, 'TUESDAY', '00:00:00', '23:59:59', 0),
+(3, 1, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
+(4, 1, 'THURSDAY', '00:00:00', '23:59:59', 0),
+(5, 1, 'FRIDAY', '00:00:00', '23:59:59', 0),
+(6, 1, 'SATURDAY', '00:00:00', '23:59:59', 0),
+(7, 1, 'SUNDAY', '00:00:00', '23:59:59', 0),
+(8, 2, 'MONDAY', '06:00:00', '23:30:00', 0),
+(9, 2, 'TUESDAY', '06:00:00', '23:30:00', 0),
+(10, 2, 'WEDNESDAY', '06:00:00', '23:30:00', 0),
+(11, 2, 'THURSDAY', '06:00:00', '23:30:00', 0),
+(12, 2, 'FRIDAY', '06:00:00', '23:30:00', 0),
+(13, 2, 'SATURDAY', '06:00:00', '23:30:00', 0),
+(14, 2, 'SUNDAY', '06:00:00', '23:30:00', 0),
+(15, 3, 'MONDAY', '00:00:00', '23:59:59', 0),
+(16, 3, 'TUESDAY', '00:00:00', '23:59:59', 0),
+(17, 3, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
+(18, 3, 'THURSDAY', '00:00:00', '23:59:59', 0),
+(19, 3, 'FRIDAY', '00:00:00', '23:59:59', 0),
+(20, 3, 'SATURDAY', '00:00:00', '23:59:59', 0),
+(21, 3, 'SUNDAY', '00:00:00', '23:59:59', 0);
 
 -- =============================================================================
--- 15. AIRPORT_MAP & MAP_FEATURES (Faithfully preserving Artos Waypoints)
--- Map 1: DFW Aerodrome (Artos Map 1 Layout)
--- Map 2: BOM Aerodrome (Artos Map 2 Layout)
+-- 15. AIRPORT_MAP & MAP_FEATURES (Faithfully preserving AURORA Waypoints)
+-- Map 1: DFW Aerodrome (AURORA Map 1 Layout)
+-- Map 2: BOM Aerodrome (AURORA Map 2 Layout)
 -- =============================================================================
 INSERT INTO `airport_map` (`map_id`, `airport_id`, `map_name`, `map_type`, `map_version`, `coordinate_reference_system`, `map_status`, `map_asset_url`) VALUES
 (1, 1, 'DFW Airfield Radar Layout (Map 1)', 'AIRPORT_LAYOUT', '2.0', 'SCREEN_PIXELS_1000x1000', 'ACTIVE', 'radar://dfw_map1'),
 (2, 3, 'BOM Airfield Radar Layout (Map 2)', 'AIRPORT_LAYOUT', '2.0', 'SCREEN_PIXELS_1000x1000', 'ACTIVE', 'radar://bom_map2');
 
--- Waypoints from Artos Map 1 (DFW)
+-- Waypoints from AURORA Map 1 (DFW)
 INSERT INTO `map_feature` (`feature_id`, `map_id`, `feature_type`, `feature_name`, `pos_x`, `pos_y`) VALUES
 (1, 1, 'WAYPOINT', 'WP-101 (Apron North)', 125, 120),
 (2, 1, 'WAYPOINT', 'WP-102 (Taxiway Alpha)', 125, 200),
@@ -359,7 +402,7 @@ INSERT INTO `map_feature` (`feature_id`, `map_id`, `feature_type`, `feature_name
 (7, 1, 'WAYPOINT', 'WP-301 (Runway 1 Threshold)', 600, 0),
 (8, 1, 'WAYPOINT', 'WP-302 (Runway 2 End)', 1000, 300),
 (9, 1, 'WAYPOINT', 'WP-303 (Runway 3 End)', 1000, 0),
--- Waypoints from Artos Map 2 (BOM)
+-- Waypoints from AURORA Map 2 (BOM)
 (10, 2, 'WAYPOINT', 'WP-B1 (Apron East)', 800, 600),
 (11, 2, 'WAYPOINT', 'WP-B2 (Taxiway Echo)', 800, 400),
 (12, 2, 'WAYPOINT', 'WP-B3 (Taxiway Sierra)', 170, 400),
