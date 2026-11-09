@@ -167,10 +167,11 @@ def main():
             "runway_direction", "taxiway", "terminal", "aircraft_stand",
             "flight", "flight_operation", "aircraft_runway_compatibility",
             "runway_restriction", "airport_operating_hours", "runway_assignment",
-            "airport_map", "map_feature", "assignment_audit"
+            "airport_map", "map_feature", "assignment_audit",
+            "app_role", "app_permission", "role_permission", "app_user"
         ]
 
-        print("\n--- INSTALLED TABLES & ROW COUNTS ---")
+        print("\n--- INSTALLED TABLES & ROW COUNTS (18 operational + 4 RBAC) ---")
         for t in tables:
             cursor.execute(f"SELECT COUNT(*) FROM `{t}`")
             row = cursor.fetchone()

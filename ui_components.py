@@ -1,26 +1,28 @@
 """
 AURORA - Pygame Reusable UI Components
-Theme: Aviation Radar & Flight Control (Dark Navy, Radar Green, Cyan, Amber)
-Preserves and elevates the visual language of ARTOS.
+Theme: Modern Airport Operations Console (Slate, Blue, Neutral Status Colors)
+Uses a restrained airport-operations console visual system.
 """
 
 import pygame
 import math
 
-# Color Palette
-COLOR_BG = (10, 15, 20)             # Deep cockpit night black
-COLOR_PANEL = (18, 25, 35)          # Tactical dark panel
-COLOR_GRID = (0, 70, 0)             # Artos radar green grid line
-COLOR_ACCENT_CYAN = (0, 255, 255)   # Artos taxiway cyan
-COLOR_RUNWAY_BLUE = (25, 141, 200)  # Artos runway vector blue
-COLOR_TEXT_WHITE = (240, 245, 250)
-COLOR_TEXT_MUTED = (140, 155, 175)
-COLOR_TEXT_YELLOW = (255, 250, 15)  # Artos waypoint yellow
-COLOR_SUCCESS_GREEN = (40, 200, 80)
-COLOR_ALERT_RED = (240, 60, 60)
-COLOR_BTN_NORMAL = (30, 45, 65)
-COLOR_BTN_HOVER = (45, 70, 100)
-COLOR_BTN_ACTIVE = (0, 160, 220)
+# A restrained airport-operations palette: slate surfaces, readable neutrals,
+# one clear blue accent, and semantic status colors. Radar geometry retains its
+# own visualization colors; the application chrome no longer imitates ARTOS.
+COLOR_BG = (14, 22, 32)
+COLOR_PANEL = (24, 36, 50)
+COLOR_GRID = (44, 65, 82)
+COLOR_ACCENT_CYAN = (75, 166, 214)
+COLOR_RUNWAY_BLUE = (55, 132, 190)
+COLOR_TEXT_WHITE = (238, 243, 248)
+COLOR_TEXT_MUTED = (157, 174, 190)
+COLOR_TEXT_YELLOW = (232, 190, 92)
+COLOR_SUCCESS_GREEN = (75, 178, 132)
+COLOR_ALERT_RED = (220, 95, 92)
+COLOR_BTN_NORMAL = (38, 55, 73)
+COLOR_BTN_HOVER = (51, 76, 99)
+COLOR_BTN_ACTIVE = (66, 132, 177)
 
 class Button:
     def __init__(self, rect, text, font, on_click=None, bg_color=COLOR_BTN_NORMAL, active=False):
@@ -31,6 +33,12 @@ class Button:
         self.bg_color = bg_color
         self.active = active
         self.hovered = False
+        self._text_surface = self.font.render(
+            self.text, True, COLOR_TEXT_WHITE
+        )
+        self._active_text_surface = self.font.render(
+            self.text, True, (0, 0, 0)
+        )
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEMOTION:
@@ -53,10 +61,10 @@ class Button:
             color = self.bg_color
             border_color = (60, 80, 110)
 
-        pygame.draw.rect(surface, color, self.rect, border_radius=4)
-        pygame.draw.rect(surface, border_color, self.rect, width=1, border_radius=4)
+        pygame.draw.rect(surface, color, self.rect, border_radius=7)
+        pygame.draw.rect(surface, border_color, self.rect, width=1, border_radius=7)
 
-        text_surf = self.font.render(self.text, True, COLOR_TEXT_WHITE if not self.active else (0, 0, 0))
+        text_surf = self._active_text_surface if self.active else self._text_surface
         text_rect = text_surf.get_rect(center=self.rect.center)
         surface.blit(text_surf, text_rect)
 
@@ -69,8 +77,8 @@ class StatCard:
         self.color = color
 
     def draw(self, surface, font_label, font_val, font_sub):
-        pygame.draw.rect(surface, COLOR_PANEL, self.rect, border_radius=6)
-        pygame.draw.rect(surface, (40, 55, 75), self.rect, width=1, border_radius=6)
+        pygame.draw.rect(surface, COLOR_PANEL, self.rect, border_radius=10)
+        pygame.draw.rect(surface, (48, 66, 84), self.rect, width=1, border_radius=10)
 
         # Left indicator strip
         pygame.draw.rect(surface, self.color, (self.rect.x, self.rect.y, 4, self.rect.height), border_radius=2)
@@ -87,7 +95,7 @@ class StatCard:
             surface.blit(sub_surf, (self.rect.x + 14, self.rect.y + 68))
 
 class DataTable:
-    def __init__(self, rect, columns, col_widths, font, row_height=28):
+    def __init__(self, rect, columns, col_widths, font, row_height=32):
         self.rect = pygame.Rect(rect)
         self.columns = columns
         self.col_widths = col_widths
@@ -96,11 +104,33 @@ class DataTable:
         self.rows = []
         self.selected_index = -1
         self.scroll_offset = 0
+        self._header_surfaces = []
+        self._row_surfaces = []
 
     def set_data(self, rows):
         self.rows = rows
         self.selected_index = -1
         self.scroll_offset = 0
+        # Text rasterization is expensive relative to blitting. Prepare both
+        # row states once when data changes instead of rendering every frame.
+        self._header_surfaces = [
+            self.font.render(str(name), True, COLOR_ACCENT_CYAN)
+            for name in self.columns
+        ]
+        normal = (210, 220, 230)
+        selected = COLOR_TEXT_WHITE
+        self._row_surfaces = []
+        for row in self.rows:
+            rendered = []
+            for val in row:
+                value = str(val) if val is not None else "-"
+                if len(value) > 28:
+                    value = value[:25] + "..."
+                rendered.append((
+                    self.font.render(value, True, normal),
+                    self.font.render(value, True, selected),
+                ))
+            self._row_surfaces.append(rendered)
 
     def get_selected_row(self):
         if 0 <= self.selected_index < len(self.rows):
@@ -126,19 +156,18 @@ class DataTable:
 
     def draw(self, surface):
         # Background
-        pygame.draw.rect(surface, COLOR_PANEL, self.rect, border_radius=6)
-        pygame.draw.rect(surface, (45, 60, 80), self.rect, width=1, border_radius=6)
+        pygame.draw.rect(surface, COLOR_PANEL, self.rect, border_radius=9)
+        pygame.draw.rect(surface, (48, 66, 84), self.rect, width=1, border_radius=9)
 
         # Header background
         header_rect = pygame.Rect(self.rect.x, self.rect.y, self.rect.width, self.row_height)
-        pygame.draw.rect(surface, (25, 38, 55), header_rect, border_top_left_radius=6, border_top_right_radius=6)
-        pygame.draw.line(surface, COLOR_ACCENT_CYAN, (self.rect.x, self.rect.y + self.row_height), 
+        pygame.draw.rect(surface, (34, 50, 67), header_rect, border_top_left_radius=9, border_top_right_radius=9)
+        pygame.draw.line(surface, (76, 139, 176), (self.rect.x, self.rect.y + self.row_height), 
                          (self.rect.right, self.rect.y + self.row_height), 1)
 
         # Header titles
         curr_x = self.rect.x + 8
-        for col_name, width in zip(self.columns, self.col_widths):
-            h_surf = self.font.render(col_name, True, COLOR_ACCENT_CYAN)
+        for h_surf, width in zip(self._header_surfaces, self.col_widths):
             surface.blit(h_surf, (curr_x, self.rect.y + 6))
             curr_x += width
 
@@ -158,13 +187,9 @@ class DataTable:
                 pygame.draw.rect(surface, (14, 20, 28), row_rect)
 
             curr_x = self.rect.x + 8
-            for val, width in zip(row, self.col_widths):
-                val_str = str(val) if val is not None else "-"
-                # Shorten if too long
-                if len(val_str) > 28:
-                    val_str = val_str[:25] + "..."
-                txt_color = COLOR_TEXT_WHITE if actual_idx == self.selected_index else (210, 220, 230)
-                txt_surf = self.font.render(val_str, True, txt_color)
+            rendered_row = self._row_surfaces[actual_idx]
+            for (normal_surf, selected_surf), width in zip(rendered_row, self.col_widths):
+                txt_surf = selected_surf if actual_idx == self.selected_index else normal_surf
                 surface.blit(txt_surf, (curr_x, y_pos + 5))
                 curr_x += width
 

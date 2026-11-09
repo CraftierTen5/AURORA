@@ -1,29 +1,32 @@
 -- =============================================================================
--- AURORA: Aircraft & Unified Runway Operations Records Archive
--- Complete MySQL Workbench & Terminal Setup Script
--- Compatible with MySQL 8.0+ / 8.4 LTS (InnoDB Engine)
--- Contains: Schema DDL, Constraints, Triggers, Views, and Real-World Seed Data
+-- AURORA COMPLETE MYSQL WORKBENCH INSTALLER
+-- Single-file teammate handoff; generated from schema.sql + seed.sql.
+-- MySQL 8.0+ | InnoDB | UTF-8
+--
+-- WARNING: CLEAN REBUILD. Drops/recreates AURORA project objects and reloads
+-- the demonstration dataset inside aurora_db.
 -- =============================================================================
 
--- Step 1: Create Database
+-- =============================================================================
+-- AURORA: Aircraft & Unified Runway Operations Records Archive
+-- Relational Database DDL Schema (MySQL 8.0+ / 8.4 LTS Compatible)
+-- Engine: InnoDB | Character Set: utf8mb4 | Collation: utf8mb4_unicode_ci
+-- Integrates with AURORA 2D Pygame Radar Visualizer & Operations Suite
+-- =============================================================================
+
 CREATE DATABASE IF NOT EXISTS `aurora_db`
   DEFAULT CHARACTER SET utf8mb4
   DEFAULT COLLATE utf8mb4_unicode_ci;
 
 USE `aurora_db`;
 
--- Step 2: Drop existing objects safely for clean re-installation
+-- Set session flags for strict schema generation
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TRIGGER IF EXISTS `trg_after_assignment_insert`;
-DROP TRIGGER IF EXISTS `trg_after_assignment_update`;
-DROP TRIGGER IF EXISTS `trg_after_assignment_delete`;
-
-DROP VIEW IF EXISTS `view_scheduled_arrivals`;
-DROP VIEW IF EXISTS `view_scheduled_departures`;
-DROP VIEW IF EXISTS `view_runway_assignment_summary`;
-DROP VIEW IF EXISTS `view_airport_infrastructure_summary`;
-
 DROP TABLE IF EXISTS `assignment_audit`;
+DROP TABLE IF EXISTS `app_user`;
+DROP TABLE IF EXISTS `role_permission`;
+DROP TABLE IF EXISTS `app_permission`;
+DROP TABLE IF EXISTS `app_role`;
 DROP TABLE IF EXISTS `runway_assignment`;
 DROP TABLE IF EXISTS `aircraft_runway_compatibility`;
 DROP TABLE IF EXISTS `runway_restriction`;
@@ -41,11 +44,16 @@ DROP TABLE IF EXISTS `airport`;
 DROP TABLE IF EXISTS `aircraft`;
 DROP TABLE IF EXISTS `aircraft_type`;
 DROP TABLE IF EXISTS `airline`;
+
+DROP VIEW IF EXISTS `view_scheduled_arrivals`;
+DROP VIEW IF EXISTS `view_scheduled_departures`;
+DROP VIEW IF EXISTS `view_runway_assignment_summary`;
+DROP VIEW IF EXISTS `view_airport_infrastructure_summary`;
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- =============================================================================
 -- 1. AIRLINE
--- Air carriers operating flights and owning/leasing aircraft.
+-- Represents an air carrier entity holding operator or owner rights.
 -- =============================================================================
 CREATE TABLE `airline` (
   `airline_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -63,7 +71,7 @@ CREATE TABLE `airline` (
 
 -- =============================================================================
 -- 2. AIRCRAFT_TYPE
--- Certified physical and operational aircraft model specifications.
+-- Certified aircraft physical and operational specification model.
 -- =============================================================================
 CREATE TABLE `aircraft_type` (
   `type_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -76,8 +84,8 @@ CREATE TABLE `aircraft_type` (
   `max_takeoff_weight` DECIMAL(10,2) NOT NULL COMMENT 'MTOW in kilograms',
   `max_landing_weight` DECIMAL(10,2) NOT NULL COMMENT 'MLW in kilograms',
   `passenger_capacity` INT NOT NULL DEFAULT 0,
-  `cargo_capacity` DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Cargo capacity in kilograms',
-  `min_runway_length` DECIMAL(8,2) NOT NULL COMMENT 'Minimum certified runway length in meters',
+  `cargo_capacity` DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Payload in kilograms',
+  `min_runway_length` DECIMAL(8,2) NOT NULL COMMENT 'Simplified baseline minimum runway length (meters)',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT `uq_type_model_variant` UNIQUE (`manufacturer`, `model`, `variant`),
@@ -93,7 +101,7 @@ CREATE TABLE `aircraft_type` (
 
 -- =============================================================================
 -- 3. AIRCRAFT
--- Individual physical registered airframes with civil registrations.
+-- Individual physical airframe registered with civil aviation authorities.
 -- =============================================================================
 CREATE TABLE `aircraft` (
   `aircraft_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -117,7 +125,7 @@ CREATE TABLE `aircraft` (
 
 -- =============================================================================
 -- 4. AIRPORT
--- Aerodromes with international codes, coordinates, and local timezones.
+-- Aerodrome installation with geographic coordinates and operational baseline.
 -- =============================================================================
 CREATE TABLE `airport` (
   `airport_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -129,8 +137,8 @@ CREATE TABLE `airport` (
   `country` VARCHAR(100) NOT NULL,
   `latitude` DECIMAL(9,6) NOT NULL,
   `longitude` DECIMAL(9,6) NOT NULL,
-  `elevation` DECIMAL(7,2) NOT NULL DEFAULT 0.00 COMMENT 'Elevation in meters above MSL',
-  `timezone` VARCHAR(50) NOT NULL DEFAULT 'UTC' COMMENT 'IANA timezone string',
+  `elevation` DECIMAL(7,2) NOT NULL DEFAULT 0.00 COMMENT 'Elevation above sea level in meters',
+  `timezone` VARCHAR(50) NOT NULL DEFAULT 'UTC' COMMENT 'IANA standard timezone name',
   `operating_status` ENUM('ACTIVE', 'RESTRICTED', 'CLOSED') NOT NULL DEFAULT 'ACTIVE',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -142,21 +150,21 @@ CREATE TABLE `airport` (
 
 -- =============================================================================
 -- 5. RUNWAY
--- Physical paved runway strips with dimensions, surface, and radar bounds.
+-- Physical runway strip with operational specifications and radar map coordinates.
 -- =============================================================================
 CREATE TABLE `runway` (
   `runway_id` INT AUTO_INCREMENT PRIMARY KEY,
   `airport_id` INT NOT NULL,
-  `runway_designation` VARCHAR(10) NOT NULL COMMENT 'Physical designation e.g. 09/27, 10/28',
-  `runway_length` DECIMAL(8,2) NOT NULL COMMENT 'Length in meters',
-  `runway_width` DECIMAL(6,2) NOT NULL COMMENT 'Width in meters',
+  `runway_designation` VARCHAR(10) NOT NULL COMMENT 'e.g. 09/27, 10/28, 11/29',
+  `runway_length` DECIMAL(8,2) NOT NULL COMMENT 'Physical length in meters',
+  `runway_width` DECIMAL(6,2) NOT NULL COMMENT 'Physical width in meters',
   `surface_type` ENUM('ASPHALT', 'CONCRETE', 'BITUMEN', 'GRASS', 'TURF') NOT NULL DEFAULT 'ASPHALT',
-  `true_heading` DECIMAL(5,2) NULL COMMENT 'True geographic heading in degrees',
+  `true_heading` DECIMAL(5,2) NULL COMMENT 'Heading in degrees',
   `runway_status` ENUM('OPEN', 'CLOSED', 'RESTRICTED', 'MAINTENANCE') NOT NULL DEFAULT 'OPEN',
-  `start_x` INT NOT NULL DEFAULT 125 COMMENT 'Pygame Radar X coordinate start',
-  `start_y` INT NOT NULL DEFAULT 500 COMMENT 'Pygame Radar Y coordinate start',
-  `end_x` INT NOT NULL DEFAULT 600 COMMENT 'Pygame Radar X coordinate end',
-  `end_y` INT NOT NULL DEFAULT 0 COMMENT 'Pygame Radar Y coordinate end',
+  `start_x` INT NOT NULL DEFAULT 125 COMMENT 'Pygame Radar X start',
+  `start_y` INT NOT NULL DEFAULT 500 COMMENT 'Pygame Radar Y start',
+  `end_x` INT NOT NULL DEFAULT 600 COMMENT 'Pygame Radar X end',
+  `end_y` INT NOT NULL DEFAULT 0 COMMENT 'Pygame Radar Y end',
   `notes` TEXT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -169,14 +177,13 @@ CREATE TABLE `runway` (
 
 -- =============================================================================
 -- 6. RUNWAY_DIRECTION
--- Bidirectional vectors along physical runways (e.g. 09 vs 27).
--- Runway assignments link specifically to this direction vector entity.
+-- Individual operational vector/direction along a physical runway (e.g. 09 vs 27).
 -- =============================================================================
 CREATE TABLE `runway_direction` (
   `direction_id` INT AUTO_INCREMENT PRIMARY KEY,
   `runway_id` INT NOT NULL,
-  `designation` VARCHAR(5) NOT NULL COMMENT 'Operational vector designation e.g. 09, 27',
-  `heading` DECIMAL(5,2) NOT NULL COMMENT 'Magnetic heading in degrees (0 to 360)',
+  `designation` VARCHAR(5) NOT NULL COMMENT 'e.g. 09, 27, 10, 28',
+  `heading` DECIMAL(5,2) NOT NULL COMMENT 'Magnetic heading in degrees',
   `landing_permitted` BOOLEAN NOT NULL DEFAULT TRUE,
   `takeoff_permitted` BOOLEAN NOT NULL DEFAULT TRUE,
   `ils_available` BOOLEAN NOT NULL DEFAULT FALSE,
@@ -191,7 +198,7 @@ CREATE TABLE `runway_direction` (
 
 -- =============================================================================
 -- 7. TAXIWAY
--- Ground circulation links connecting runway exits to aprons and stands.
+-- Ground circulation link with radar map coordinates.
 -- =============================================================================
 CREATE TABLE `taxiway` (
   `taxiway_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -212,7 +219,7 @@ CREATE TABLE `taxiway` (
 
 -- =============================================================================
 -- 8. TERMINAL
--- Passenger and cargo terminal facilities.
+-- Passenger or cargo terminal structure at the airport.
 -- =============================================================================
 CREATE TABLE `terminal` (
   `terminal_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -228,7 +235,7 @@ CREATE TABLE `terminal` (
 
 -- =============================================================================
 -- 9. AIRCRAFT_STAND
--- Designated parking positions and boarding gates.
+-- Designated apron parking position / gate for aircraft turnaround.
 -- =============================================================================
 CREATE TABLE `aircraft_stand` (
   `stand_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -248,11 +255,11 @@ CREATE TABLE `aircraft_stand` (
 
 -- =============================================================================
 -- 10. FLIGHT
--- Distinct scheduled flight service instances identified by service date.
+-- Distinct scheduled flight service route instance.
 -- =============================================================================
 CREATE TABLE `flight` (
   `flight_id` INT AUTO_INCREMENT PRIMARY KEY,
-  `flight_number` VARCHAR(10) NOT NULL COMMENT 'e.g. AI-101, BA-142',
+  `flight_number` VARCHAR(10) NOT NULL COMMENT 'e.g. AG-101, SK-501',
   `airline_id` INT NOT NULL,
   `aircraft_id` INT NOT NULL,
   `origin_airport_id` INT NOT NULL,
@@ -267,15 +274,14 @@ CREATE TABLE `flight` (
   CONSTRAINT `fk_flight_aircraft` FOREIGN KEY (`aircraft_id`)
     REFERENCES `aircraft` (`aircraft_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_flight_origin` FOREIGN KEY (`origin_airport_id`)
-    REFERENCES `airport` (`airport_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+    REFERENCES `airport` (`airport_id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `fk_flight_destination` FOREIGN KEY (`destination_airport_id`)
-    REFERENCES `airport` (`airport_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT `chk_flight_endpoints_differ` CHECK (`origin_airport_id` <> `destination_airport_id`)
+    REFERENCES `airport` (`airport_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
 -- 11. FLIGHT_OPERATION
--- Explicit landing or takeoff events at a specific station airport.
+-- Explicit landing or takeoff event at a specific airport.
 -- =============================================================================
 CREATE TABLE `flight_operation` (
   `operation_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -297,7 +303,7 @@ CREATE TABLE `flight_operation` (
 
 -- =============================================================================
 -- 12. AIRCRAFT_RUNWAY_COMPATIBILITY
--- Certified suitability matrix between aircraft types and physical runways.
+-- Simplified eligibility matrix for demo/academic testing.
 -- =============================================================================
 CREATE TABLE `aircraft_runway_compatibility` (
   `type_id` INT NOT NULL,
@@ -315,7 +321,7 @@ CREATE TABLE `aircraft_runway_compatibility` (
 
 -- =============================================================================
 -- 13. RUNWAY_RESTRICTION
--- Scheduled maintenance closures, surface works, and environmental curfews.
+-- Operational restrictions and scheduled closures / maintenance intervals.
 -- =============================================================================
 CREATE TABLE `runway_restriction` (
   `restriction_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -341,7 +347,7 @@ CREATE TABLE `runway_restriction` (
 
 -- =============================================================================
 -- 14. AIRPORT_OPERATING_HOURS
--- Aerodrome daily opening and closing hours.
+-- Baseline airfield operating schedule per day of the week.
 -- =============================================================================
 CREATE TABLE `airport_operating_hours` (
   `hours_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -359,7 +365,7 @@ CREATE TABLE `airport_operating_hours` (
 
 -- =============================================================================
 -- 15. RUNWAY_ASSIGNMENT
--- Manually assigned runway direction vector for a flight operation.
+-- Manually recorded runway direction assignment for a flight operation.
 -- Strictly 1:1 with flight_operation via UNIQUE(operation_id).
 -- =============================================================================
 CREATE TABLE `runway_assignment` (
@@ -381,7 +387,7 @@ CREATE TABLE `runway_assignment` (
 
 -- =============================================================================
 -- 16. AIRPORT_MAP
--- Visual layout metadata container for aerodrome maps (Artos Map 1 and Map 2).
+-- Metadata container for airport layout representations.
 -- =============================================================================
 CREATE TABLE `airport_map` (
   `map_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -400,7 +406,7 @@ CREATE TABLE `airport_map` (
 
 -- =============================================================================
 -- 17. MAP_FEATURE
--- Geographical and radar waypoint coordinates from the Artos simulation layout.
+-- Individual geographical and radar waypoint features from AURORA.
 -- =============================================================================
 CREATE TABLE `map_feature` (
   `feature_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -420,7 +426,7 @@ CREATE TABLE `map_feature` (
 
 -- =============================================================================
 -- 18. ASSIGNMENT_AUDIT
--- Course demonstration audit trail populated automatically via MySQL triggers.
+-- Course demonstration audit trail populated via database triggers.
 -- =============================================================================
 CREATE TABLE `assignment_audit` (
   `audit_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -436,7 +442,42 @@ CREATE TABLE `assignment_audit` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- PERFORMANCE INDEXES
+-- APPLICATION RBAC (separate from the 18 operational traffic-regulation tables)
+-- =============================================================================
+CREATE TABLE `app_role` (
+  `role_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `role_code` VARCHAR(30) NOT NULL UNIQUE,
+  `role_name` VARCHAR(60) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `app_permission` (
+  `permission_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `permission_code` VARCHAR(60) NOT NULL UNIQUE,
+  `permission_name` VARCHAR(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `role_permission` (
+  `role_id` INT NOT NULL,
+  `permission_id` INT NOT NULL,
+  PRIMARY KEY (`role_id`, `permission_id`),
+  CONSTRAINT `fk_role_permission_role` FOREIGN KEY (`role_id`) REFERENCES `app_role` (`role_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_role_permission_permission` FOREIGN KEY (`permission_id`) REFERENCES `app_permission` (`permission_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `app_user` (
+  `user_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `username` VARCHAR(60) NOT NULL UNIQUE,
+  `password_hash` CHAR(64) NOT NULL,
+  `password_salt` VARCHAR(64) NOT NULL,
+  `role_id` INT NOT NULL,
+  `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_login_at` DATETIME NULL,
+  CONSTRAINT `fk_app_user_role` FOREIGN KEY (`role_id`) REFERENCES `app_role` (`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
+-- INDEXES FOR PERFORMANCE AND ACCESS PATH OPTIMIZATION
 -- =============================================================================
 CREATE INDEX `idx_flight_lookup` ON `flight` (`service_date`, `origin_airport_id`, `destination_airport_id`);
 CREATE INDEX `idx_flight_airline` ON `flight` (`airline_id`);
@@ -447,9 +488,30 @@ CREATE INDEX `idx_restriction_window` ON `runway_restriction` (`runway_id`, `sta
 CREATE INDEX `idx_aircraft_operator` ON `aircraft` (`operator_airline_id`, `aircraft_status`);
 
 -- =============================================================================
--- AUTOMATED AUDIT TRIGGERS
+-- AUDIT TRIGGERS
 -- =============================================================================
 DELIMITER $$
+
+-- Enforce distinct origin/destination endpoints without a CHECK/FK column conflict in MySQL.
+CREATE TRIGGER `trg_before_flight_insert`
+BEFORE INSERT ON `flight`
+FOR EACH ROW
+BEGIN
+  IF NEW.`origin_airport_id` = NEW.`destination_airport_id` THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'A flight origin and destination must be different airports';
+  END IF;
+END$$
+
+CREATE TRIGGER `trg_before_flight_update`
+BEFORE UPDATE ON `flight`
+FOR EACH ROW
+BEGIN
+  IF NEW.`origin_airport_id` = NEW.`destination_airport_id` THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'A flight origin and destination must be different airports';
+  END IF;
+END$$
 
 CREATE TRIGGER `trg_after_assignment_insert`
 AFTER INSERT ON `runway_assignment`
@@ -535,10 +597,9 @@ END$$
 DELIMITER ;
 
 -- =============================================================================
--- ACADEMIC RELATIONAL VIEWS
+-- VIEWS FOR REPORTING AND CONVENIENCE
 -- =============================================================================
 
--- View 1: Scheduled Arrivals
 CREATE OR REPLACE VIEW `view_scheduled_arrivals` AS
 SELECT 
   fo.`operation_id`,
@@ -569,7 +630,6 @@ LEFT JOIN `runway_direction` rd ON ra.`direction_id` = rd.`direction_id`
 LEFT JOIN `runway` rw ON rd.`runway_id` = rw.`runway_id`
 WHERE fo.`operation_type` = 'LANDING';
 
--- View 2: Scheduled Departures
 CREATE OR REPLACE VIEW `view_scheduled_departures` AS
 SELECT 
   fo.`operation_id`,
@@ -600,7 +660,6 @@ LEFT JOIN `runway_direction` rd ON ra.`direction_id` = rd.`direction_id`
 LEFT JOIN `runway` rw ON rd.`runway_id` = rw.`runway_id`
 WHERE fo.`operation_type` = 'TAKEOFF';
 
--- View 3: Complete Runway Assignment Summary
 CREATE OR REPLACE VIEW `view_runway_assignment_summary` AS
 SELECT 
   ra.`assignment_id`,
@@ -636,7 +695,6 @@ JOIN `airport` ap ON fo.`airport_id` = ap.`airport_id`
 JOIN `runway_direction` rd ON ra.`direction_id` = rd.`direction_id`
 JOIN `runway` rw ON rd.`runway_id` = rw.`runway_id`;
 
--- View 4: Airport Infrastructure Inventory Summary
 CREATE OR REPLACE VIEW `view_airport_infrastructure_summary` AS
 SELECT 
   ap.`airport_id`,
@@ -658,70 +716,147 @@ LEFT JOIN `terminal` tm ON ap.`airport_id` = tm.`airport_id`
 LEFT JOIN `aircraft_stand` st ON ap.`airport_id` = st.`airport_id`
 GROUP BY ap.`airport_id`, ap.`iata_code`, ap.`icao_code`, ap.`airport_name`, ap.`city`, ap.`country`;
 
+
 -- =============================================================================
--- REAL-WORLD AVIATION SEED DATA
--- Fictionalized and documented historical aviation operational records
--- Map 1: Dallas/Fort Worth International (DFW) | Map 2: Mumbai Chhatrapati Shivaji (BOM)
+-- DEMONSTRATION DATA
 -- =============================================================================
 
--- 1. Real World Major Airlines
+-- =============================================================================
+-- AURORA: Seed Data Script
+-- Fictional / Demonstration Dataset for DBMS Academic Demonstration
+-- Fully mapped to AURORA Pygame 2D Radar layouts (Map 1: DFW & Map 2: BOM)
+-- =============================================================================
+
+USE `aurora_db`;
+
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE `assignment_audit`;
+TRUNCATE TABLE `runway_assignment`;
+TRUNCATE TABLE `aircraft_runway_compatibility`;
+TRUNCATE TABLE `runway_restriction`;
+TRUNCATE TABLE `airport_operating_hours`;
+TRUNCATE TABLE `map_feature`;
+TRUNCATE TABLE `airport_map`;
+TRUNCATE TABLE `flight_operation`;
+TRUNCATE TABLE `flight`;
+TRUNCATE TABLE `aircraft_stand`;
+TRUNCATE TABLE `terminal`;
+TRUNCATE TABLE `taxiway`;
+TRUNCATE TABLE `runway_direction`;
+TRUNCATE TABLE `runway`;
+TRUNCATE TABLE `airport`;
+TRUNCATE TABLE `aircraft`;
+TRUNCATE TABLE `aircraft_type`;
+TRUNCATE TABLE `airline`;
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- RBAC reference data and classroom demo accounts.
+INSERT INTO `app_role` (`role_code`, `role_name`) VALUES
+('ADMIN', 'Administrator / ATC Controller'),
+('CUSTOMER', 'Customer')
+ON DUPLICATE KEY UPDATE `role_name` = VALUES(`role_name`);
+
+INSERT INTO `app_permission` (`permission_code`, `permission_name`) VALUES
+('schedule.read', 'View public departure schedule'),
+('operations.read', 'View all operational schedules'),
+('assignment.manage', 'Create, update and cancel runway assignments'),
+('radar.read', 'View airport radar and map data'),
+('fleet.read', 'View fleet and airport infrastructure'),
+('reports.read', 'View SQL reports and audit history'),
+('users.manage', 'Manage application accounts')
+ON DUPLICATE KEY UPDATE `permission_name` = VALUES(`permission_name`);
+
+INSERT IGNORE INTO `role_permission` (`role_id`, `permission_id`)
+SELECT r.`role_id`, p.`permission_id`
+FROM `app_role` r CROSS JOIN `app_permission` p
+WHERE r.`role_code` = 'ADMIN';
+
+INSERT IGNORE INTO `role_permission` (`role_id`, `permission_id`)
+SELECT r.`role_id`, p.`permission_id`
+FROM `app_role` r JOIN `app_permission` p
+  ON p.`permission_code` = 'schedule.read'
+WHERE r.`role_code` = 'CUSTOMER';
+
+-- Demo only. Change both passwords before any real deployment.
+-- PBKDF2-HMAC-SHA256, 310,000 iterations; passwords are never stored in plaintext.
+INSERT IGNORE INTO `app_user`
+  (`username`, `password_hash`, `password_salt`, `role_id`)
+SELECT 'admin',
+  'f0fe0381097d5cd2c921bd14d8a895280be6d8cfe311e33852991d07ab735f90',
+  'aurora-admin-demo-salt-v1', `role_id`
+FROM `app_role` WHERE `role_code` = 'ADMIN';
+
+INSERT IGNORE INTO `app_user`
+  (`username`, `password_hash`, `password_salt`, `role_id`)
+SELECT 'customer',
+  '7ef5946bf866cbbf9e09e9bbbb10c33a58a2f46a65aaef7a34f21ec7d3548300',
+  'aurora-customer-demo-salt-v1', `role_id`
+FROM `app_role` WHERE `role_code` = 'CUSTOMER';
+
+-- =============================================================================
+-- 1. AIRLINES (4 airlines)
+-- =============================================================================
 INSERT INTO `airline` (`airline_id`, `airline_name`, `iata_code`, `icao_code`, `country`, `callsign`, `operating_status`) VALUES
 (1, 'American Airlines', 'AA', 'AAL', 'United States', 'AMERICAN', 'ACTIVE'),
 (2, 'British Airways', 'BA', 'BAW', 'United Kingdom', 'SPEEDBIRD', 'ACTIVE'),
 (3, 'Air India', 'AI', 'AIC', 'India', 'AIRINDIA', 'ACTIVE'),
-(4, 'Nordic Regional Air', 'NR', 'NRA', 'Sweden', 'NORDIC', 'ACTIVE'),
-(5, 'Delta Air Lines', 'DL', 'DAL', 'United States', 'DELTA', 'ACTIVE'),
-(6, 'Singapore Airlines', 'SQ', 'SIA', 'Singapore', 'SINGAPORE', 'ACTIVE');
+(4, 'Nordic Regional Air', 'NR', 'NRA', 'Sweden', 'NORDIC', 'ACTIVE');
 
--- 2. Certified Aircraft Types (Real Technical Parameters)
+-- =============================================================================
+-- 2. AIRCRAFT TYPES (6 types: Light, Medium, Heavy)
+-- =============================================================================
 INSERT INTO `aircraft_type` (`type_id`, `manufacturer`, `model`, `variant`, `aircraft_category`, `wingspan`, `aircraft_length`, `max_takeoff_weight`, `max_landing_weight`, `passenger_capacity`, `cargo_capacity`, `min_runway_length`) VALUES
-(1, 'Airbus', 'A320neo', 'A320-271N', 'MEDIUM', 35.80, 37.57, 79000.00, 67400.00, 186, 3700.00, 2100.00),
-(2, 'Boeing', 'B737-800', 'NextGen-800', 'MEDIUM', 35.79, 39.47, 79010.00, 66360.00, 189, 4400.00, 2300.00),
-(3, 'Boeing', 'B777-300ER', 'Long-Range Widebody', 'HEAVY', 64.80, 73.86, 351530.00, 251290.00, 396, 20100.00, 3200.00),
+(1, 'Airbus', 'A320neo', 'A320-271N', 'MEDIUM', 35.80, 37.57, 79000.00, 67400.00, 180, 3700.00, 2100.00),
+(2, 'Boeing', 'B737-800', 'NG-800', 'MEDIUM', 35.79, 39.47, 79010.00, 66360.00, 189, 4400.00, 2300.00),
+(3, 'Boeing', 'B777-300ER', 'Long-Range', 'HEAVY', 64.80, 73.86, 351530.00, 251290.00, 396, 20100.00, 3200.00),
 (4, 'Airbus', 'A350-900', 'XWB-900', 'HEAVY', 64.75, 66.80, 280000.00, 207000.00, 350, 16500.00, 2800.00),
-(5, 'Boeing', 'B787-9', 'Dreamliner', 'HEAVY', 60.17, 62.81, 254000.00, 193000.00, 296, 17200.00, 2700.00),
-(6, 'ATR', 'ATR 72-600', 'Regional Turboprop', 'LIGHT', 27.05, 27.17, 23000.00, 22350.00, 72, 1700.00, 1330.00);
+(5, 'ATR', 'ATR 72-600', 'Regional Turboprop', 'LIGHT', 27.05, 27.17, 23000.00, 22350.00, 72, 1700.00, 1400.00),
+(6, 'Bombardier', 'CRJ-900', 'NextGen', 'MEDIUM', 24.85, 36.20, 38330.00, 34020.00, 90, 2320.00, 1950.00);
 
--- 3. Aircraft Fleet (Civil Registrations)
+-- =============================================================================
+-- 3. AIRCRAFT (12 aircraft)
+-- =============================================================================
 INSERT INTO `aircraft` (`aircraft_id`, `registration_number`, `type_id`, `owner_airline_id`, `operator_airline_id`, `manufacturing_date`, `aircraft_status`, `notes`) VALUES
-(1, 'N101AA', 1, 1, 1, '2021-03-15', 'ACTIVE', 'American Airlines A320neo based at DFW hub'),
-(2, 'N102AA', 1, 1, 1, '2022-06-20', 'ACTIVE', 'American Airlines A320neo mainline trunk carrier'),
-(3, 'N777AA', 3, 1, 1, '2019-11-10', 'ACTIVE', 'American Airlines Flagship B777-300ER long-hauler'),
-(4, 'N787AA', 5, 1, 1, '2020-04-12', 'ACTIVE', 'American Airlines B787-9 Dreamliner widebody'),
-(5, 'G-ZBJA', 2, 2, 2, '2021-08-04', 'ACTIVE', 'British Airways European fleet 737-800'),
-(6, 'G-XWBA', 4, 2, 2, '2020-07-22', 'ACTIVE', 'British Airways A350-900 flagship long-haul'),
-(7, 'VT-IRA', 6, 3, 3, '2021-08-04', 'ACTIVE', 'Air India ATR 72-600 regional feeder'),
-(8, 'VT-EXA', 3, 3, 3, '2018-09-30', 'ACTIVE', 'Air India flagship B777-300ER based at BOM'),
-(9, 'VT-EXB', 1, 3, 3, '2019-05-18', 'ACTIVE', 'Air India A320neo domestic based at BOM'),
-(10, 'N802AA', 2, 1, 1, '2020-11-25', 'ACTIVE', 'American Airlines domestic trunk carrier B737-800'),
-(11, 'N778AA', 3, 1, 1, '2021-01-15', 'ACTIVE', 'American Airlines high-capacity B777-300ER'),
-(12, 'SE-NRA1', 5, 4, 4, '2022-02-14', 'ACTIVE', 'Nordic commuter ATR 72'),
-(13, 'SE-NRA2', 6, 4, 4, '2020-07-19', 'ACTIVE', 'Nordic regional jet CRJ-900'),
-(14, 'N999AA', 1, 1, 1, '2015-04-10', 'MAINTENANCE', 'In routine C-check maintenance at DFW Hangar 5'),
-(15, 'G-RET1', 2, 2, 2, '2008-03-10', 'RETIRED', 'Retired from scheduled revenue service');
+(1, 'N101AA', 1, 1, 1, '2021-03-15', 'ACTIVE', 'Primary mainline A320neo based at DFW hub'),
+(2, 'N102AA', 1, 1, 1, '2022-06-20', 'ACTIVE', 'Mainline A320neo based at DFW'),
+(3, 'N777AA', 3, 1, 1, '2019-11-10', 'ACTIVE', 'Widebody international 777-300ER long-hauler'),
+(4, 'G-XWBA', 4, 2, 2, '2020-01-18', 'ACTIVE', 'British Airways flagship A350-900 based at LHR'),
+(5, 'G-ZBJA', 2, 2, 2, '2021-08-04', 'ACTIVE', 'Skyline European fleet 737-800'),
+(6, 'VT-EXA', 3, 3, 3, '2023-04-12', 'ACTIVE', 'Air India flagship B777-300ER based at BOM'),
+(7, 'VT-EXB', 1, 3, 3, '2018-05-22', 'ACTIVE', 'Air India domestic trunk A320neo based at BOM'),
+(8, 'N802AA', 2, 1, 1, '2019-09-30', 'ACTIVE', 'American domestic trunk carrier B737-800'),
+(9, 'SE-NRA1', 5, 4, 4, '2022-02-14', 'ACTIVE', 'Nordic commuter ATR 72'),
+(10, 'SE-NRA2', 6, 4, 4, '2020-07-19', 'ACTIVE', 'Nordic regional jet CRJ-900'),
+(11, 'N999AA', 1, 1, 1, '2015-04-10', 'MAINTENANCE', 'In routine C-check maintenance at DFW Hangar 5'),
+(12, 'G-RETR', 2, 2, 2, '2012-08-01', 'RETIRED', 'Retired from scheduled revenue service');
 
--- 4. Real International Airports
+-- =============================================================================
+-- 4. AIRPORTS (3 airports: DFW, LHR, BOM)
+-- Airport 1 maps to AURORA Map 1 (DFW / Dallas-Fort Worth)
+-- Airport 3 maps to AURORA Map 2 (BOM / Mumbai Chhatrapati Shivaji)
+-- =============================================================================
 INSERT INTO `airport` (`airport_id`, `airport_name`, `iata_code`, `icao_code`, `city`, `region_state`, `country`, `latitude`, `longitude`, `elevation`, `timezone`, `operating_status`) VALUES
 (1, 'Dallas/Fort Worth International Airport', 'DFW', 'KDFW', 'Dallas-Fort Worth', 'Texas', 'United States', 32.899800, -97.040300, 185.00, 'America/Chicago', 'ACTIVE'),
 (2, 'London Heathrow Airport', 'LHR', 'EGLL', 'London', 'Greater London', 'United Kingdom', 51.470000, -0.454300, 25.00, 'Europe/London', 'ACTIVE'),
-(3, 'Chhatrapati Shivaji Maharaj International Airport', 'BOM', 'VABB', 'Mumbai', 'Maharashtra', 'India', 19.088600, 72.867900, 11.00, 'Asia/Kolkata', 'ACTIVE'),
-(4, 'Dubai International Airport', 'DXB', 'OMDB', 'Dubai', 'Emirate of Dubai', 'United Arab Emirates', 25.253200, 55.365700, 19.00, 'Asia/Dubai', 'ACTIVE');
+(3, 'Chhatrapati Shivaji Maharaj International Airport', 'BOM', 'VABB', 'Mumbai', 'Maharashtra', 'India', 19.088600, 72.867900, 11.00, 'Asia/Kolkata', 'ACTIVE');
 
--- 5. Physical Runways (Exact Artos Radar Coordinates)
--- Runways 1, 2, 3 correspond to Artos Map 1 geometry (DFW)!
--- Runways 6, 7 correspond to Artos Map 2 geometry (BOM)!
+-- =============================================================================
+-- 5. RUNWAYS WITH EXACT RADAR COORDINATES
+-- Runways 1, 2, 3 correspond to AURORA Map 1 geometry (DFW)!
+-- Runways 6, 7 correspond to AURORA Map 2 geometry (BOM)!
+-- =============================================================================
 INSERT INTO `runway` (`runway_id`, `airport_id`, `runway_designation`, `runway_length`, `runway_width`, `surface_type`, `true_heading`, `runway_status`, `start_x`, `start_y`, `end_x`, `end_y`, `notes`) VALUES
-(1, 1, '17L/35R', 2591.00, 45.00, 'CONCRETE', 175.00, 'OPEN', 125, 500, 600, 0, 'DFW East Parallel Runway (Artos Map 1 Runway 1)'),
-(2, 1, '17C/35C', 4085.00, 45.00, 'CONCRETE', 175.00, 'OPEN', 125, 200, 1000, 300, 'DFW Central Primary CAT IIIb Runway (Artos Map 1 Runway 2)'),
-(3, 1, '18R/36L', 4084.00, 60.00, 'CONCRETE', 185.00, 'OPEN', 125, 120, 1000, 0, 'DFW Longest West Heavy Runway (Artos Map 1 Runway 3)'),
-(4, 2, '09L/27R', 3902.00, 50.00, 'ASPHALT', 90.00, 'OPEN', 200, 350, 900, 350, 'LHR Northern Primary Strip'),
-(5, 2, '09R/27L', 3660.00, 50.00, 'ASPHALT', 90.00, 'OPEN', 200, 650, 900, 650, 'LHR Southern Primary Strip'),
-(6, 3, '09/27', 3448.00, 45.00, 'ASPHALT', 92.00, 'OPEN', 800, 600, 100, 200, 'BOM Primary East-West Runway (Artos Map 2 Runway 9)'),
-(7, 3, '14/32', 2925.00, 45.00, 'ASPHALT', 142.00, 'OPEN', 800, 600, 200, 500, 'BOM Secondary Intersecting Runway (Artos Map 2 Runway 10)'),
-(8, 4, '12L/30R', 4000.00, 60.00, 'ASPHALT', 120.00, 'OPEN', 150, 400, 850, 400, 'DXB Northern Runway Strip'),
-(9, 4, '12R/30L', 4450.00, 60.00, 'ASPHALT', 120.00, 'OPEN', 150, 600, 850, 600, 'DXB Southern Heavy Runway Strip');
+(1, 1, '17L/35R', 2591.00, 45.00, 'CONCRETE', 175.00, 'OPEN', 125, 500, 600, 0, 'East parallel runway (AURORA Map 1 Runway 1)'),
+(2, 1, '17C/35C', 4085.00, 45.00, 'CONCRETE', 175.00, 'OPEN', 125, 200, 1000, 300, 'Central primary long runway (AURORA Map 1 Runway 2)'),
+(3, 1, '18R/36L', 4084.00, 60.00, 'CONCRETE', 185.00, 'OPEN', 125, 120, 1000, 0, 'West long heavy runway (AURORA Map 1 Runway 3)'),
+(4, 2, '09L/27R', 3902.00, 50.00, 'ASPHALT', 90.00, 'OPEN', 200, 350, 900, 350, 'Northern runway at EGLL'),
+(5, 2, '09R/27L', 3660.00, 50.00, 'ASPHALT', 90.00, 'OPEN', 200, 650, 900, 650, 'Southern runway at EGLL'),
+(6, 3, '09/27', 3448.00, 45.00, 'ASPHALT', 92.00, 'OPEN', 800, 600, 100, 200, 'Main primary runway at VABB (AURORA Map 2 Runway 9)'),
+(7, 3, '14/32', 2925.00, 45.00, 'ASPHALT', 142.00, 'OPEN', 800, 600, 200, 500, 'Secondary intersecting runway at VABB (AURORA Map 2 Runway 10)');
 
--- 6. Runway Directions (Bidirectional Operational Vectors)
+-- =============================================================================
+-- 6. RUNWAY_DIRECTIONS (14 directions total: 2 per physical runway)
+-- =============================================================================
 INSERT INTO `runway_direction` (`direction_id`, `runway_id`, `designation`, `heading`, `landing_permitted`, `takeoff_permitted`, `ils_available`, `approach_category`) VALUES
 -- DFW Runway 1 (17L/35R)
 (1, 1, '17L', 175.00, 1, 1, 1, 'CAT I'),
@@ -742,42 +877,43 @@ INSERT INTO `runway_direction` (`direction_id`, `runway_id`, `designation`, `hea
 (11, 6, '09', 92.00, 1, 1, 1, 'CAT II'),
 (12, 6, '27', 272.00, 1, 1, 1, 'CAT II'),
 -- BOM Runway 7 (14/32)
-(13, 7, '14', 142.00, 1, 0, 0, 'NON-PRECISION'), -- Notice: Takeoff prohibited for demonstration!
-(14, 7, '32', 322.00, 0, 1, 0, 'VISUAL'),         -- Notice: Landing prohibited for demonstration!
--- DXB Runways
-(15, 8, '12L', 120.00, 1, 1, 1, 'CAT III'),
-(16, 8, '30R', 300.00, 1, 1, 1, 'CAT III'),
-(17, 9, '12R', 120.00, 1, 1, 1, 'CAT III'),
-(18, 9, '30L', 300.00, 1, 1, 1, 'CAT III');
+(13, 7, '14', 142.00, 1, 0, 0, 'NON-PRECISION'),
+(14, 7, '32', 322.00, 0, 1, 0, 'VISUAL');
 
--- 7. Taxiways (Artos Guidance Links)
+-- =============================================================================
+-- 7. TAXIWAYS WITH EXACT RADAR COORDINATES
+-- Matches AURORA cyan guidance lines
+-- =============================================================================
 INSERT INTO `taxiway` (`taxiway_id`, `airport_id`, `taxiway_name`, `surface_type`, `taxiway_status`, `start_x`, `start_y`, `end_x`, `end_y`) VALUES
--- DFW Taxiways
+-- DFW Map 1 Taxiways
 (1, 1, 'Alpha (A)', 'CONCRETE', 'OPEN', 125, 200, 125, 500),
 (2, 1, 'Bravo (B)', 'CONCRETE', 'OPEN', 125, 500, 125, 700),
 (3, 1, 'Kilo (K)', 'CONCRETE', 'OPEN', 300, 200, 412, 480),
 -- LHR Taxiways
 (4, 2, 'Alpha (A)', 'ASPHALT', 'OPEN', 200, 350, 200, 650),
 (5, 2, 'November (N)', 'ASPHALT', 'OPEN', 900, 350, 900, 650),
--- BOM Taxiways (Exact Artos Map 2 geometry)
+-- BOM Map 2 Taxiways (Exact AURORA Map 2 geometry)
 (6, 3, 'Echo (E)', 'ASPHALT', 'OPEN', 800, 600, 800, 400),
 (7, 3, 'Sierra (S)', 'ASPHALT', 'OPEN', 800, 400, 170, 400),
 (8, 3, 'Alpha (A)', 'ASPHALT', 'OPEN', 100, 600, 1000, 600),
 (9, 3, 'Bravo (B)', 'ASPHALT', 'OPEN', 800, 200, 800, 600),
 (10, 3, 'Charlie (C)', 'ASPHALT', 'OPEN', 100, 200, 200, 500);
 
--- 8. Terminals
+-- =============================================================================
+-- 8. TERMINALS
+-- =============================================================================
 INSERT INTO `terminal` (`terminal_id`, `airport_id`, `terminal_name`, `terminal_type`) VALUES
 (1, 1, 'Terminal A (American Hub)', 'DOMESTIC'),
 (2, 1, 'Terminal D (International)', 'INTERNATIONAL'),
 (3, 1, 'Terminal E (Regional & Cargo)', 'CARGO'),
 (4, 2, 'Terminal 2 (The Queen\'s Terminal)', 'INTERNATIONAL'),
 (5, 2, 'Terminal 5 (British Flagship)', 'INTERNATIONAL'),
-(6, 3, 'Terminal 2 (Chhatrapati International)', 'INTERNATIONAL'),
-(7, 3, 'Terminal 1 (Santa Cruz Domestic)', 'DOMESTIC'),
-(8, 4, 'Terminal 3 (Emirates Dedicated Hub)', 'INTERNATIONAL');
+(6, 3, 'Terminal 2 (Chhatrapati T2)', 'INTERNATIONAL'),
+(7, 3, 'Terminal 1 (Santa Cruz Domestic)', 'DOMESTIC');
 
--- 9. Aircraft Stands / Gates
+-- =============================================================================
+-- 9. AIRCRAFT STANDS
+-- =============================================================================
 INSERT INTO `aircraft_stand` (`stand_id`, `airport_id`, `terminal_id`, `stand_code`, `max_aircraft_size`, `stand_status`) VALUES
 (1, 1, 2, 'Gate D18', 'SUPER', 'AVAILABLE'),
 (2, 1, 1, 'Gate A24', 'HEAVY', 'AVAILABLE'),
@@ -785,180 +921,200 @@ INSERT INTO `aircraft_stand` (`stand_id`, `airport_id`, `terminal_id`, `stand_co
 (4, 2, 4, 'Gate A10', 'HEAVY', 'AVAILABLE'),
 (5, 2, 5, 'Gate 504', 'SUPER', 'AVAILABLE'),
 (6, 3, 6, 'Gate 42', 'HEAVY', 'AVAILABLE'),
-(7, 3, 7, 'Stand D03', 'MEDIUM', 'AVAILABLE'),
-(8, 4, 8, 'Gate B12', 'SUPER', 'AVAILABLE');
+(7, 3, 7, 'Stand D03', 'MEDIUM', 'AVAILABLE');
 
--- 10. Real Scheduled Flights
+-- =============================================================================
+-- 10. FLIGHTS (22 distinct flights)
+-- Connecting DFW (Dallas), BOM (Mumbai), and LHR (London)
+-- =============================================================================
 INSERT INTO `flight` (`flight_id`, `flight_number`, `airline_id`, `aircraft_id`, `origin_airport_id`, `destination_airport_id`, `flight_type`, `flight_status`, `service_date`) VALUES
-(1, 'AA-101', 1, 1, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(2, 'AA-102', 1, 2, 3, 1, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(3, 'AA-161', 1, 4, 1, 2, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(4, 'AA-162', 1, 4, 2, 1, 'PASSENGER', 'SCHEDULED', '2026-10-28'),
-(5, 'BA-192', 2, 6, 2, 1, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(6, 'BA-193', 2, 5, 1, 2, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(7, 'AI-101', 3, 8, 3, 1, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(8, 'AI-102', 3, 8, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(9, 'AA-512', 1, 3, 4, 1, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(10, 'AA-204', 1, 10, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(11, 'AI-205', 3, 9, 3, 1, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(12, 'NR-7112', 4, 12, 1, 3, 'CHARTER', 'SCHEDULED', '2026-10-27'),
-(13, 'BA-196', 2, 6, 1, 2, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(14, 'SQ-402', 6, 6, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-27'),
-(15, 'AA-CARGO1', 1, 3, 1, 4, 'CARGO', 'SCHEDULED', '2026-10-27'),
-(16, 'AA-105', 1, 1, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-28'),
-(17, 'AA-106', 1, 2, 3, 1, 'PASSENGER', 'SCHEDULED', '2026-10-28'),
-(18, 'AA-208', 1, 10, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-28'),
-(19, 'AI-504', 3, 8, 4, 3, 'PASSENGER', 'SCHEDULED', '2026-10-28'),
-(20, 'BA-198', 2, 6, 2, 1, 'PASSENGER', 'SCHEDULED', '2026-10-28');
+(1, 'AA-101', 1, 1, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-15'),
+(2, 'AA-102', 1, 2, 3, 1, 'PASSENGER', 'SCHEDULED', '2026-10-15'),
+(3, 'AA-201', 1, 3, 1, 2, 'PASSENGER', 'SCHEDULED', '2026-10-15'),
+(4, 'AA-202', 1, 3, 2, 1, 'PASSENGER', 'SCHEDULED', '2026-10-16'),
+(5, 'BA-192', 2, 4, 2, 1, 'PASSENGER', 'SCHEDULED', '2026-10-15'),
+(6, 'BA-193', 2, 5, 1, 2, 'PASSENGER', 'SCHEDULED', '2026-10-15'),
+(7, 'BA-138', 2, 4, 2, 3, 'PASSENGER', 'SCHEDULED', '2026-10-15'),
+(8, 'AI-191', 3, 6, 2, 1, 'PASSENGER', 'SCHEDULED', '2026-10-15'),
+(9, 'AI-102', 3, 7, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-15'),
+(10, 'NR-801', 4, 9, 1, 3, 'CHARTER', 'SCHEDULED', '2026-10-15'),
+(11, 'NR-802', 4, 10, 3, 1, 'PASSENGER', 'SCHEDULED', '2026-10-15'),
+(12, 'AA-105', 1, 1, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-16'),
+(13, 'AA-106', 1, 2, 3, 1, 'PASSENGER', 'SCHEDULED', '2026-10-16'),
+(14, 'BA-196', 2, 4, 2, 1, 'PASSENGER', 'SCHEDULED', '2026-10-16'),
+(15, 'BA-197', 2, 5, 1, 2, 'PASSENGER', 'SCHEDULED', '2026-10-16'),
+(16, 'AI-195', 3, 6, 1, 2, 'PASSENGER', 'SCHEDULED', '2026-10-16'),
+(17, 'AA-CARGO1', 1, 3, 1, 2, 'CARGO', 'SCHEDULED', '2026-10-15'),
+(18, 'AA-FERRY2', 1, 2, 3, 1, 'FERRY', 'SCHEDULED', '2026-10-15'),
+(19, 'BA-139', 2, 4, 3, 2, 'PASSENGER', 'SCHEDULED', '2026-10-16'),
+(20, 'NR-805', 4, 10, 1, 3, 'PASSENGER', 'SCHEDULED', '2026-10-16'),
+(21, 'AA-109', 1, 1, 3, 1, 'PASSENGER', 'SCHEDULED', '2026-10-17'),
+(22, 'AI-199', 3, 7, 3, 2, 'PASSENGER', 'SCHEDULED', '2026-10-17');
 
--- 11. Flight Operations (Predefined Landing and Takeoff events)
+-- =============================================================================
+-- 11. FLIGHT_OPERATIONS (Predefined Landing and Takeoff events)
+-- =============================================================================
 INSERT INTO `flight_operation` (`operation_id`, `flight_id`, `airport_id`, `operation_type`, `scheduled_datetime`, `estimated_datetime`, `actual_datetime`, `operation_status`, `notes`) VALUES
--- AA-101 (DFW to BOM)
-(1, 1, 1, 'TAKEOFF', '2026-10-27 06:00:00', '2026-10-27 06:05:00', NULL, 'SCHEDULED', 'Morning trunk departure from DFW'),
-(2, 1, 3, 'LANDING', '2026-10-27 08:15:00', '2026-10-27 08:20:00', NULL, 'SCHEDULED', 'Scheduled morning arrival at BOM'),
+-- Flight 1: AA-101 (DFW to BOM)
+(1, 1, 1, 'TAKEOFF', '2026-10-15 06:00:00', '2026-10-15 06:05:00', NULL, 'SCHEDULED', 'Morning departure from DFW hub to BOM'),
+(2, 1, 3, 'LANDING', '2026-10-15 08:15:00', '2026-10-15 08:20:00', NULL, 'SCHEDULED', 'Arrival at BOM from DFW'),
 
--- AA-102 (BOM to DFW)
-(3, 2, 3, 'TAKEOFF', '2026-10-27 09:30:00', NULL, NULL, 'SCHEDULED', 'Return departure from BOM to DFW'),
-(4, 2, 1, 'LANDING', '2026-10-27 11:45:00', NULL, NULL, 'SCHEDULED', 'DFW noon base arrival'),
+-- Flight 2: AA-102 (BOM to DFW)
+(3, 2, 3, 'TAKEOFF', '2026-10-15 09:30:00', NULL, NULL, 'SCHEDULED', 'Morning return departure from BOM'),
+(4, 2, 1, 'LANDING', '2026-10-15 11:45:00', NULL, NULL, 'SCHEDULED', 'Arrival back at DFW base'),
 
--- AA-161 (DFW to LHR - Long-haul 787-9)
-(5, 3, 1, 'TAKEOFF', '2026-10-27 02:15:00', NULL, NULL, 'SCHEDULED', 'Long-haul red-eye widebody takeoff DFW to LHR'),
-(6, 3, 2, 'LANDING', '2026-10-27 07:10:00', NULL, NULL, 'SCHEDULED', 'Heathrow dawn arrival'),
+-- Flight 3: AA-201 (DFW to LHR)
+(5, 3, 1, 'TAKEOFF', '2026-10-15 02:15:00', NULL, NULL, 'SCHEDULED', 'Long-haul red-eye widebody takeoff DFW to LHR'),
+(6, 3, 2, 'LANDING', '2026-10-15 07:10:00', NULL, NULL, 'SCHEDULED', 'LHR early morning arrival'),
 
--- AA-162 (LHR to DFW)
-(7, 4, 2, 'TAKEOFF', '2026-10-28 10:00:00', NULL, NULL, 'SCHEDULED', 'Heathrow daytime departure'),
-(8, 4, 1, 'LANDING', '2026-10-28 23:30:00', NULL, NULL, 'SCHEDULED', 'DFW late evening arrival'),
+-- Flight 4: AA-202 (LHR to DFW)
+(7, 4, 2, 'TAKEOFF', '2026-10-16 10:00:00', NULL, NULL, 'SCHEDULED', 'Daytime return flight from LHR'),
+(8, 4, 1, 'LANDING', '2026-10-16 23:30:00', NULL, NULL, 'SCHEDULED', 'Late night arrival at DFW'),
 
--- BA-192 (LHR to DFW)
-(9, 5, 2, 'TAKEOFF', '2026-10-27 08:00:00', NULL, NULL, 'SCHEDULED', 'British Airways morning departure from LHR'),
-(10, 5, 1, 'LANDING', '2026-10-27 21:15:00', NULL, NULL, 'SCHEDULED', 'DFW evening arrival'),
+-- Flight 5: BA-192 (LHR to DFW)
+(9, 5, 2, 'TAKEOFF', '2026-10-15 08:00:00', NULL, NULL, 'SCHEDULED', 'British Airways morning departure from LHR'),
+(10, 5, 1, 'LANDING', '2026-10-15 21:15:00', NULL, NULL, 'SCHEDULED', 'DFW evening arrival'),
 
--- BA-193 (DFW to LHR)
-(11, 6, 1, 'TAKEOFF', '2026-10-27 23:00:00', NULL, NULL, 'SCHEDULED', 'DFW midnight departure to London'),
-(12, 6, 2, 'LANDING', '2026-10-28 04:30:00', NULL, NULL, 'SCHEDULED', 'London early morning arrival'),
+-- Flight 6: BA-193 (DFW to LHR)
+(11, 6, 1, 'TAKEOFF', '2026-10-15 23:00:00', NULL, NULL, 'SCHEDULED', 'Midnight departure DFW to London'),
+(12, 6, 2, 'LANDING', '2026-10-16 04:30:00', NULL, NULL, 'SCHEDULED', 'London early morning arrival'),
 
--- AI-101 (BOM to DFW)
-(13, 7, 3, 'TAKEOFF', '2026-10-27 22:15:00', NULL, NULL, 'SCHEDULED', 'Air India direct long-haul departure BOM'),
-(14, 7, 1, 'LANDING', '2026-10-28 03:00:00', NULL, NULL, 'SCHEDULED', 'DFW early hours widebody arrival'),
+-- Flight 7: BA-138 (LHR to BOM)
+(13, 7, 2, 'TAKEOFF', '2026-10-15 12:00:00', NULL, NULL, 'SCHEDULED', 'LHR to BOM flagship A350 flight'),
+(14, 7, 3, 'LANDING', '2026-10-16 01:45:00', NULL, NULL, 'SCHEDULED', 'BOM overnight arrival'),
 
--- AA-204 (DFW to BOM)
-(15, 10, 1, 'TAKEOFF', '2026-10-27 07:30:00', NULL, NULL, 'SCHEDULED', 'American morning long-haul flight'),
-(16, 10, 3, 'LANDING', '2026-10-27 09:45:00', NULL, NULL, 'SCHEDULED', 'BOM arrival'),
+-- Flight 8: AI-191 (LHR to DFW)
+(15, 8, 2, 'TAKEOFF', '2026-10-15 14:30:00', NULL, NULL, 'SCHEDULED', 'Transatlantic continuation departure'),
+(16, 8, 1, 'LANDING', '2026-10-16 03:40:00', NULL, NULL, 'SCHEDULED', 'DFW early hours arrival'),
 
--- NR-7112 (DFW to BOM - Regional / Charter)
-(17, 12, 1, 'TAKEOFF', '2026-10-27 15:00:00', NULL, NULL, 'SCHEDULED', 'Demonstration flight during restriction window'),
-(18, 12, 3, 'LANDING', '2026-10-27 18:30:00', NULL, NULL, 'SCHEDULED', 'BOM evening arrival'),
+-- Flight 9: AI-102 (DFW to BOM)
+(17, 9, 1, 'TAKEOFF', '2026-10-15 15:00:00', NULL, NULL, 'SCHEDULED', 'Direct long-haul takeoff DFW to BOM'),
+(18, 9, 3, 'LANDING', '2026-10-15 17:10:00', NULL, NULL, 'SCHEDULED', 'BOM late afternoon arrival'),
 
--- AA-CARGO1 (DFW to DXB - Heavy B777 Cargo)
-(19, 15, 1, 'TAKEOFF', '2026-10-27 04:00:00', NULL, NULL, 'SCHEDULED', 'Heavy cargo widebody flight from DFW'),
-(20, 15, 4, 'LANDING', '2026-10-27 06:30:00', NULL, NULL, 'SCHEDULED', 'DXB dawn cargo arrival');
+-- Flight 10: NR-801 (DFW to BOM)
+(19, 10, 1, 'TAKEOFF', '2026-10-15 18:00:00', NULL, NULL, 'SCHEDULED', 'Charter turboprop flight'),
+(20, 10, 3, 'LANDING', '2026-10-15 21:00:00', NULL, NULL, 'SCHEDULED', 'Charter arrival BOM'),
 
--- 12. Certified Aircraft-Runway Compatibility Matrix
--- Demonstrates academic constraints: Heavy widebodies (B777, A350) require long runways
--- and are restricted on short runway DFW 17L/35R (2591m) and BOM 14/32 (2925m).
+-- Flight 17: Cargo AA-CARGO1 (DFW to LHR)
+(21, 17, 1, 'TAKEOFF', '2026-10-15 04:00:00', NULL, NULL, 'SCHEDULED', 'Heavy cargo departure from DFW'),
+(22, 17, 2, 'LANDING', '2026-10-15 09:30:00', NULL, NULL, 'SCHEDULED', 'Heavy cargo arrival at LHR'),
+
+-- Operations for Oct 16
+(23, 12, 1, 'TAKEOFF', '2026-10-16 06:10:00', NULL, NULL, 'SCHEDULED', 'Second day morning departure DFW'),
+(24, 12, 3, 'LANDING', '2026-10-16 08:25:00', NULL, NULL, 'SCHEDULED', 'Second day morning arrival BOM'),
+(25, 13, 3, 'TAKEOFF', '2026-10-16 10:00:00', NULL, NULL, 'SCHEDULED', 'BOM morning takeoff'),
+(26, 13, 1, 'LANDING', '2026-10-16 12:15:00', NULL, NULL, 'SCHEDULED', 'DFW noon arrival'),
+(27, 14, 2, 'TAKEOFF', '2026-10-16 08:15:00', NULL, NULL, 'SCHEDULED', 'LHR departure to DFW'),
+(28, 14, 1, 'LANDING', '2026-10-16 21:30:00', NULL, NULL, 'SCHEDULED', 'DFW night arrival'),
+(29, 15, 1, 'TAKEOFF', '2026-10-16 23:15:00', NULL, NULL, 'SCHEDULED', 'DFW midnight departure'),
+(30, 15, 2, 'LANDING', '2026-10-17 04:45:00', NULL, NULL, 'SCHEDULED', 'LHR dawn arrival');
+
+-- =============================================================================
+-- 12. AIRCRAFT_RUNWAY_COMPATIBILITY
+-- Matrix defining eligibility for each aircraft type on each runway.
+-- Heavy widebodies (B777, A350) are NOT eligible on shorter runways (DFW 17L/35R)!
+-- =============================================================================
 INSERT INTO `aircraft_runway_compatibility` (`type_id`, `runway_id`, `landing_eligible`, `takeoff_eligible`, `remarks`) VALUES
--- A320neo (type 1) on all runways
-(1, 1, 1, 1, 'Certified standard on DFW 17L/35R'),
-(1, 2, 1, 1, 'Certified standard on DFW 17C/35C'),
-(1, 3, 1, 1, 'Certified standard on DFW 18R/36L'),
-(1, 4, 1, 1, 'Certified standard on LHR 09L/27R'),
-(1, 5, 1, 1, 'Certified standard on LHR 09R/27L'),
-(1, 6, 1, 1, 'Certified standard on BOM 09/27'),
-(1, 7, 1, 1, 'Certified standard on BOM 14/32'),
-(1, 8, 1, 1, 'Certified standard on DXB 12L/30R'),
-(1, 9, 1, 1, 'Certified standard on DXB 12R/30L'),
+-- A320neo (type 1) across all runways
+(1, 1, 1, 1, 'Fully compatible on DFW 17L/35R'),
+(1, 2, 1, 1, 'Fully compatible on DFW 17C/35C'),
+(1, 3, 1, 1, 'Fully compatible on DFW 18R/36L'),
+(1, 4, 1, 1, 'Fully compatible on LHR 09L/27R'),
+(1, 5, 1, 1, 'Fully compatible on LHR 09R/27L'),
+(1, 6, 1, 1, 'Fully compatible on BOM 09/27'),
+(1, 7, 1, 1, 'Compatible on BOM secondary 14/32'),
 
--- B737-800 (type 2) on all runways
-(2, 1, 1, 1, 'Certified standard on DFW 17L/35R'),
-(2, 2, 1, 1, 'Certified standard on DFW 17C/35C'),
-(2, 3, 1, 1, 'Certified standard on DFW 18R/36L'),
-(2, 4, 1, 1, 'Certified standard on LHR 09L/27R'),
-(2, 5, 1, 1, 'Certified standard on LHR 09R/27L'),
-(2, 6, 1, 1, 'Certified standard on BOM 09/27'),
-(2, 7, 1, 1, 'Certified standard on BOM 14/32'),
-(2, 8, 1, 1, 'Certified standard on DXB 12L/30R'),
-(2, 9, 1, 1, 'Certified standard on DXB 12R/30L'),
+-- B737-800 (type 2) across all runways
+(2, 1, 1, 1, 'Fully compatible on DFW 17L/35R'),
+(2, 2, 1, 1, 'Fully compatible on DFW 17C/35C'),
+(2, 3, 1, 1, 'Fully compatible on DFW 18R/36L'),
+(2, 4, 1, 1, 'Fully compatible on LHR 09L/27R'),
+(2, 5, 1, 1, 'Fully compatible on LHR 09R/27L'),
+(2, 6, 1, 1, 'Fully compatible on BOM 09/27'),
+(2, 7, 1, 1, 'Compatible on BOM secondary 14/32'),
 
--- B777-300ER (type 3 - Heavy Widebody MTOW 351,530 kg)
-(3, 1, 0, 0, 'INELIGIBLE: DFW 17L/35R (2591m) below B777-300ER MTOW field length threshold (3200m)'),
-(3, 2, 1, 1, 'Eligible: DFW 17C/35C (4085m) heavy certified'),
-(3, 3, 1, 1, 'Eligible: DFW 18R/36L (4084m) prime widebody runway'),
-(3, 4, 1, 1, 'Eligible on LHR 09L/27R'),
-(3, 5, 1, 1, 'Eligible on LHR 09R/27L'),
-(3, 6, 1, 1, 'Eligible on BOM 09/27'),
-(3, 7, 0, 0, 'INELIGIBLE: BOM secondary runway 14/32 (2925m) below B777 safety envelope'),
-(3, 8, 1, 1, 'Eligible on DXB 12L/30R'),
-(3, 9, 1, 1, 'Eligible on DXB 12R/30L'),
+-- B777-300ER (type 3 - Heavy Widebody)
+-- Runway 1 (DFW 17L/35R) is 2591m -> Ineligible for B777 MTOW operations! (Simplified rule)
+(3, 1, 0, 0, 'INELIGIBLE: Runway length 2591m below B777-300ER minimum MTOW safety envelope 3200m'),
+(3, 2, 1, 1, 'Eligible: DFW 17C/35C length 4085m exceeds requirements'),
+(3, 3, 1, 1, 'Eligible: DFW 18R/36L length 4084m prime widebody runway'),
+(3, 4, 1, 1, 'Eligible: LHR 09L/27R length 3902m'),
+(3, 5, 1, 1, 'Eligible: LHR 09R/27L length 3660m'),
+(3, 6, 1, 1, 'Eligible: BOM 09/27 length 3448m'),
+(3, 7, 0, 0, 'INELIGIBLE: BOM secondary runway 14/32 too short (2925m) for B777-300ER'),
 
--- A350-900 (type 4 - Heavy Widebody MTOW 280,000 kg)
-(4, 1, 0, 0, 'INELIGIBLE: DFW 17L/35R field length restriction for A350 at full payload'),
+-- A350-900 (type 4 - Heavy Widebody)
+(4, 1, 0, 0, 'INELIGIBLE: DFW 17L/35R below A350 recommended field length'),
 (4, 2, 1, 1, 'Eligible on DFW 17C/35C'),
 (4, 3, 1, 1, 'Eligible on DFW 18R/36L'),
 (4, 4, 1, 1, 'Eligible on LHR 09L/27R'),
 (4, 5, 1, 1, 'Eligible on LHR 09R/27L'),
 (4, 6, 1, 1, 'Eligible on BOM 09/27'),
-(4, 7, 0, 0, 'INELIGIBLE: BOM 14/32 clearance constraint'),
-(4, 8, 1, 1, 'Eligible on DXB 12L/30R'),
-(4, 9, 1, 1, 'Eligible on DXB 12R/30L'),
+(4, 7, 0, 0, 'INELIGIBLE: BOM 14/32 wingspan/length clearance constraint'),
 
--- B787-9 Dreamliner (type 5)
-(5, 1, 0, 0, 'INELIGIBLE: DFW 17L/35R restricted for B787-9 MTOW departures'),
+-- ATR 72-600 (type 5 - Light Turboprop)
+(5, 1, 1, 1, 'Eligible on DFW 17L/35R'),
 (5, 2, 1, 1, 'Eligible on DFW 17C/35C'),
 (5, 3, 1, 1, 'Eligible on DFW 18R/36L'),
 (5, 4, 1, 1, 'Eligible on LHR 09L/27R'),
 (5, 5, 1, 1, 'Eligible on LHR 09R/27L'),
 (5, 6, 1, 1, 'Eligible on BOM 09/27'),
-(5, 7, 0, 0, 'INELIGIBLE: BOM 14/32 below field envelope'),
-(5, 8, 1, 1, 'Eligible on DXB 12L/30R'),
-(5, 9, 1, 1, 'Eligible on DXB 12R/30L'),
+(5, 7, 1, 1, 'Eligible on BOM 14/32'),
 
--- ATR 72-600 (type 6 - Regional Turboprop)
+-- CRJ-900 (type 6 - Regional Jet)
 (6, 1, 1, 1, 'Eligible on DFW 17L/35R'),
 (6, 2, 1, 1, 'Eligible on DFW 17C/35C'),
 (6, 3, 1, 1, 'Eligible on DFW 18R/36L'),
 (6, 4, 1, 1, 'Eligible on LHR 09L/27R'),
 (6, 5, 1, 1, 'Eligible on LHR 09R/27L'),
 (6, 6, 1, 1, 'Eligible on BOM 09/27'),
-(6, 7, 1, 1, 'Eligible on BOM 14/32'),
-(6, 8, 1, 1, 'Eligible on DXB 12L/30R'),
-(6, 9, 1, 1, 'Eligible on DXB 12R/30L');
+(6, 7, 1, 1, 'Eligible on BOM 14/32');
 
--- 13. Runway Restrictions & Maintenance Windows
+-- =============================================================================
+-- 13. RUNWAY_RESTRICTION (Scheduled closures & maintenance windows)
+-- DFW 18R/36L (Runway 3) has scheduled lighting maintenance on Oct 15 from 13:00 to 17:00!
+-- =============================================================================
 INSERT INTO `runway_restriction` (`restriction_id`, `runway_id`, `restriction_type`, `start_datetime`, `end_datetime`, `description`, `restriction_status`) VALUES
-(1, 3, 'LIGHTING_MAINTENANCE', '2026-10-27 13:00:00', '2026-10-27 17:00:00', 'Routine AGL (Aeronautical Ground Lighting) calibration on DFW Runway 18R/36L', 'SCHEDULED'),
-(2, 5, 'SURFACE_MAINTENANCE', '2026-10-27 01:00:00', '2026-10-27 05:00:00', 'Night rubber removal and friction testing on LHR 09R/27L', 'SCHEDULED'),
-(3, 7, 'NOISE_ABATEMENT', '2026-10-27 22:00:00', '2026-10-28 06:00:00', 'Night curfew restriction over residential corridor on BOM 14/32', 'SCHEDULED');
+(1, 3, 'LIGHTING_MAINTENANCE', '2026-10-15 13:00:00', '2026-10-15 17:00:00', 'Routine AGL (Aeronautical Ground Lighting) calibration and maintenance window on Runway 18R/36L', 'SCHEDULED'),
+(2, 5, 'SURFACE_MAINTENANCE', '2026-10-16 01:00:00', '2026-10-16 05:00:00', 'Night-time rubber removal and friction testing on LHR 09R/27L', 'SCHEDULED'),
+(3, 7, 'NOISE_ABATEMENT', '2026-10-15 22:00:00', '2026-10-16 06:00:00', 'Night curfew noise restriction over residential area on BOM 14/32', 'SCHEDULED');
 
--- 14. Airport Operating Hours
+-- =============================================================================
+-- 14. AIRPORT OPERATING HOURS
+-- =============================================================================
 INSERT INTO `airport_operating_hours` (`hours_id`, `airport_id`, `day_of_week`, `opening_time`, `closing_time`, `is_closed`) VALUES
 (1, 1, 'MONDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'TUESDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'THURSDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'FRIDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'SATURDAY', '00:00:00', '23:59:59', 0),
-(1, 1, 'SUNDAY', '00:00:00', '23:59:59', 0),
-(2, 2, 'MONDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'TUESDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'WEDNESDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'THURSDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'FRIDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'SATURDAY', '06:00:00', '23:30:00', 0),
-(2, 2, 'SUNDAY', '06:00:00', '23:30:00', 0),
-(3, 3, 'MONDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'TUESDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'THURSDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'FRIDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'SATURDAY', '00:00:00', '23:59:59', 0),
-(3, 3, 'SUNDAY', '00:00:00', '23:59:59', 0);
+(2, 1, 'TUESDAY', '00:00:00', '23:59:59', 0),
+(3, 1, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
+(4, 1, 'THURSDAY', '00:00:00', '23:59:59', 0),
+(5, 1, 'FRIDAY', '00:00:00', '23:59:59', 0),
+(6, 1, 'SATURDAY', '00:00:00', '23:59:59', 0),
+(7, 1, 'SUNDAY', '00:00:00', '23:59:59', 0),
+(8, 2, 'MONDAY', '06:00:00', '23:30:00', 0),
+(9, 2, 'TUESDAY', '06:00:00', '23:30:00', 0),
+(10, 2, 'WEDNESDAY', '06:00:00', '23:30:00', 0),
+(11, 2, 'THURSDAY', '06:00:00', '23:30:00', 0),
+(12, 2, 'FRIDAY', '06:00:00', '23:30:00', 0),
+(13, 2, 'SATURDAY', '06:00:00', '23:30:00', 0),
+(14, 2, 'SUNDAY', '06:00:00', '23:30:00', 0),
+(15, 3, 'MONDAY', '00:00:00', '23:59:59', 0),
+(16, 3, 'TUESDAY', '00:00:00', '23:59:59', 0),
+(17, 3, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
+(18, 3, 'THURSDAY', '00:00:00', '23:59:59', 0),
+(19, 3, 'FRIDAY', '00:00:00', '23:59:59', 0),
+(20, 3, 'SATURDAY', '00:00:00', '23:59:59', 0),
+(21, 3, 'SUNDAY', '00:00:00', '23:59:59', 0);
 
--- 15. Airport Maps & Waypoints (Artos Map 1 & Map 2 Layouts)
-INSERT INTO `airport_map` (`map_id`, `airport_id`, `map_name`, `map_type`, `map_version`, `coordinate_reference_system`, `map_status`) VALUES
-(1, 1, 'DFW Airfield Radar Layout (Map 1)', 'AIRPORT_LAYOUT', '2.0', 'SCREEN_PIXELS_1000x1000', 'ACTIVE'),
-(2, 3, 'BOM Airfield Radar Layout (Map 2)', 'AIRPORT_LAYOUT', '2.0', 'SCREEN_PIXELS_1000x1000', 'ACTIVE');
+-- =============================================================================
+-- 15. AIRPORT_MAP & MAP_FEATURES (Faithfully preserving AURORA Waypoints)
+-- Map 1: DFW Aerodrome (AURORA Map 1 Layout)
+-- Map 2: BOM Aerodrome (AURORA Map 2 Layout)
+-- =============================================================================
+INSERT INTO `airport_map` (`map_id`, `airport_id`, `map_name`, `map_type`, `map_version`, `coordinate_reference_system`, `map_status`, `map_asset_url`) VALUES
+(1, 1, 'DFW Airfield Radar Layout (Map 1)', 'AIRPORT_LAYOUT', '2.0', 'SCREEN_PIXELS_1000x1000', 'ACTIVE', 'radar://dfw_map1'),
+(2, 3, 'BOM Airfield Radar Layout (Map 2)', 'AIRPORT_LAYOUT', '2.0', 'SCREEN_PIXELS_1000x1000', 'ACTIVE', 'radar://bom_map2');
 
--- Waypoints from Artos Map 1 (DFW)
+-- Waypoints from AURORA Map 1 (DFW)
 INSERT INTO `map_feature` (`feature_id`, `map_id`, `feature_type`, `feature_name`, `pos_x`, `pos_y`) VALUES
 (1, 1, 'WAYPOINT', 'WP-101 (Apron North)', 125, 120),
 (2, 1, 'WAYPOINT', 'WP-102 (Taxiway Alpha)', 125, 200),
@@ -969,7 +1125,7 @@ INSERT INTO `map_feature` (`feature_id`, `map_id`, `feature_type`, `feature_name
 (7, 1, 'WAYPOINT', 'WP-301 (Runway 1 Threshold)', 600, 0),
 (8, 1, 'WAYPOINT', 'WP-302 (Runway 2 End)', 1000, 300),
 (9, 1, 'WAYPOINT', 'WP-303 (Runway 3 End)', 1000, 0),
--- Waypoints from Artos Map 2 (BOM)
+-- Waypoints from AURORA Map 2 (BOM)
 (10, 2, 'WAYPOINT', 'WP-B1 (Apron East)', 800, 600),
 (11, 2, 'WAYPOINT', 'WP-B2 (Taxiway Echo)', 800, 400),
 (12, 2, 'WAYPOINT', 'WP-B3 (Taxiway Sierra)', 170, 400),
@@ -979,199 +1135,47 @@ INSERT INTO `map_feature` (`feature_id`, `map_id`, `feature_type`, `feature_name
 (16, 2, 'WAYPOINT', 'WP-B7 (East Boundary 1)', 995, 500),
 (17, 2, 'WAYPOINT', 'WP-B8 (East Boundary 2)', 995, 200);
 
--- 16. Confirmed Runway Assignments (Triggers will automatically log to assignment_audit)
+-- =============================================================================
+-- 16. RUNWAY_ASSIGNMENT (Pre-assigned demonstration records)
+-- =============================================================================
 INSERT INTO `runway_assignment` (`assignment_id`, `operation_id`, `direction_id`, `assignment_datetime`, `assignment_status`, `assigned_by`, `remarks`) VALUES
--- Operation 1: AA-101 TAKEOFF at DFW -> Assigned Runway 35C (Direction 4)
-(1, 1, 4, '2026-10-27 05:15:00', 'CONFIRMED', 'OPERATOR_ALPHA', 'Assigned central parallel runway 35C for prompt departure'),
+-- Operation 1: AA-101 TAKEOFF at DFW (Airport 1) -> Assigned Runway 35C (Direction 4)
+(1, 1, 4, '2026-10-15 05:15:00', 'CONFIRMED', 'OPERATOR_ALPHA', 'Assigned central parallel runway 35C for prompt departure'),
 
--- Operation 2: AA-101 LANDING at BOM -> Assigned Runway 27 (Direction 12)
-(2, 2, 12, '2026-10-27 07:45:00', 'CONFIRMED', 'OPERATOR_BETA', 'Main east-west runway approach vector BOM 09/27'),
+-- Operation 2: AA-101 LANDING at BOM (Airport 3) -> Assigned Runway 27 (Direction 12)
+(2, 2, 12, '2026-10-15 07:45:00', 'CONFIRMED', 'OPERATOR_BETA', 'Main east-west runway approach BOM 09/27'),
 
--- Operation 5: AA-161 TAKEOFF at DFW (Heavy 787-9) -> Assigned Runway 36L (Direction 6)
-(3, 5, 6, '2026-10-27 01:30:00', 'CONFIRMED', 'DISPATCHER_DFW', 'Heavy departure routed to longest west runway 18R/36L'),
+-- Operation 5: AA-201 TAKEOFF at DFW (Airport 1, Heavy B777) -> Assigned Runway 36L (Direction 6)
+(3, 5, 6, '2026-10-15 01:30:00', 'CONFIRMED', 'DISPATCHER_DFW', 'Heavy widebody routed to longest west runway 18R/36L'),
 
--- Operation 6: AA-161 LANDING at LHR -> Assigned Runway 27R (Direction 8)
-(4, 6, 8, '2026-10-27 06:30:00', 'CONFIRMED', 'TOWER_LHR', 'Standard morning arrival flow 27R'),
+-- Operation 6: AA-201 LANDING at LHR (Airport 2) -> Assigned Runway 27R (Direction 8)
+(4, 6, 8, '2026-10-15 06:30:00', 'CONFIRMED', 'TOWER_LHR', 'Standard morning arrival flow 27R'),
 
--- Operation 9: BA-192 TAKEOFF at LHR -> Assigned Runway 27L (Direction 10)
-(5, 9, 10, '2026-10-27 02:45:00', 'CONFIRMED', 'DISPATCHER_LHR', 'Approved departure slot');
--- A320neo (type 1) on all runways
-(1, 1, 1, 1, 'Certified standard on DEL 09/27'),
-(1, 2, 1, 1, 'Certified standard on DEL 10/28'),
-(1, 3, 1, 1, 'Certified standard on DEL 11/29'),
-(1, 4, 1, 1, 'Certified standard on LHR 09L/27R'),
-(1, 5, 1, 1, 'Certified standard on LHR 09R/27L'),
-(1, 6, 1, 1, 'Certified standard on BOM 09/27'),
-(1, 7, 1, 1, 'Certified standard on BOM 14/32'),
-(1, 8, 1, 1, 'Certified standard on DXB 12L/30R'),
-(1, 9, 1, 1, 'Certified standard on DXB 12R/30L'),
+-- Operation 9: BA-192 TAKEOFF at LHR (Airport 2) -> Assigned Runway 27L (Direction 10)
+(5, 9, 10, '2026-10-15 07:15:00', 'CONFIRMED', 'TOWER_LHR', 'Designated departure runway'),
 
--- B737-800 (type 2) on all runways
-(2, 1, 1, 1, 'Certified standard on DEL 09/27'),
-(2, 2, 1, 1, 'Certified standard on DEL 10/28'),
-(2, 3, 1, 1, 'Certified standard on DEL 11/29'),
-(2, 4, 1, 1, 'Certified standard on LHR 09L/27R'),
-(2, 5, 1, 1, 'Certified standard on LHR 09R/27L'),
-(2, 6, 1, 1, 'Certified standard on BOM 09/27'),
-(2, 7, 1, 1, 'Certified standard on BOM 14/32'),
-(2, 8, 1, 1, 'Certified standard on DXB 12L/30R'),
-(2, 9, 1, 1, 'Certified standard on DXB 12R/30L'),
+-- Operation 21: AA-CARGO1 TAKEOFF at DFW (Airport 1) -> Assigned Runway 35C (Direction 4)
+(6, 21, 4, '2026-10-15 03:20:00', 'CONFIRMED', 'DISPATCHER_DFW', 'Cargo night slot takeoff on 35C');
 
--- B777-300ER (type 3 - Heavy Widebody MTOW 351,530 kg)
-(3, 1, 0, 0, 'INELIGIBLE: DEL 09/27 (2816m) below B777-300ER MTOW field length threshold (3200m)'),
-(3, 2, 1, 1, 'Eligible: DEL 10/28 (3810m) heavy certified'),
-(3, 3, 1, 1, 'Eligible: DEL 11/29 (4430m) prime widebody runway'),
-(3, 4, 1, 1, 'Eligible on LHR 09L/27R'),
-(3, 5, 1, 1, 'Eligible on LHR 09R/27L'),
-(3, 6, 1, 1, 'Eligible on BOM 09/27'),
-(3, 7, 0, 0, 'INELIGIBLE: BOM secondary runway 14/32 (2925m) below B777 safety envelope'),
-(3, 8, 1, 1, 'Eligible on DXB 12L/30R'),
-(3, 9, 1, 1, 'Eligible on DXB 12R/30L'),
-
--- A350-900 (type 4 - Heavy Widebody MTOW 280,000 kg)
-(4, 1, 0, 0, 'INELIGIBLE: DEL 09/27 field length restriction for A350 at full payload'),
-(4, 2, 1, 1, 'Eligible on DEL 10/28'),
-(4, 3, 1, 1, 'Eligible on DEL 11/29'),
-(4, 4, 1, 1, 'Eligible on LHR 09L/27R'),
-(4, 5, 1, 1, 'Eligible on LHR 09R/27L'),
-(4, 6, 1, 1, 'Eligible on BOM 09/27'),
-(4, 7, 0, 0, 'INELIGIBLE: BOM 14/32 clearance constraint'),
-(4, 8, 1, 1, 'Eligible on DXB 12L/30R'),
-(4, 9, 1, 1, 'Eligible on DXB 12R/30L'),
-
--- B787-9 Dreamliner (type 5)
-(5, 1, 0, 0, 'INELIGIBLE: DEL 09/27 restricted for B787-9 MTOW departures'),
-(5, 2, 1, 1, 'Eligible on DEL 10/28'),
-(5, 3, 1, 1, 'Eligible on DEL 11/29'),
-(5, 4, 1, 1, 'Eligible on LHR 09L/27R'),
-(5, 5, 1, 1, 'Eligible on LHR 09R/27L'),
-(5, 6, 1, 1, 'Eligible on BOM 09/27'),
-(5, 7, 0, 0, 'INELIGIBLE: BOM 14/32 below field envelope'),
-(5, 8, 1, 1, 'Eligible on DXB 12L/30R'),
-(5, 9, 1, 1, 'Eligible on DXB 12R/30L'),
-
--- ATR 72-600 (type 6 - Regional Turboprop)
-(6, 1, 1, 1, 'Eligible on DEL 09/27'),
-(6, 2, 1, 1, 'Eligible on DEL 10/28'),
-(6, 3, 1, 1, 'Eligible on DEL 11/29'),
-(6, 4, 1, 1, 'Eligible on LHR 09L/27R'),
-(6, 5, 1, 1, 'Eligible on LHR 09R/27L'),
-(6, 6, 1, 1, 'Eligible on BOM 09/27'),
-(6, 7, 1, 1, 'Eligible on BOM 14/32'),
-(6, 8, 1, 1, 'Eligible on DXB 12L/30R'),
-(6, 9, 1, 1, 'Eligible on DXB 12R/30L');
-
--- 13. Runway Restrictions & Maintenance Windows
-INSERT INTO `runway_restriction` (`restriction_id`, `runway_id`, `restriction_type`, `start_datetime`, `end_datetime`, `description`, `restriction_status`) VALUES
-(1, 3, 'LIGHTING_MAINTENANCE', '2026-10-27 13:00:00', '2026-10-27 17:00:00', 'Routine AGL (Aeronautical Ground Lighting) calibration on DEL Runway 11/29', 'SCHEDULED'),
-(2, 5, 'SURFACE_MAINTENANCE', '2026-10-27 01:00:00', '2026-10-27 05:00:00', 'Night rubber removal and friction testing on LHR 09R/27L', 'SCHEDULED'),
-(3, 7, 'NOISE_ABATEMENT', '2026-10-27 22:00:00', '2026-10-28 06:00:00', 'Night curfew restriction over residential corridor on BOM 14/32', 'SCHEDULED');
-
--- 14. Airport Operating Hours
-INSERT INTO `airport_operating_hours` (`airport_id`, `day_of_week`, `opening_time`, `closing_time`, `is_closed`) VALUES
-(1, 'MONDAY', '00:00:00', '23:59:59', 0),
-(1, 'TUESDAY', '00:00:00', '23:59:59', 0),
-(1, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
-(1, 'THURSDAY', '00:00:00', '23:59:59', 0),
-(1, 'FRIDAY', '00:00:00', '23:59:59', 0),
-(1, 'SATURDAY', '00:00:00', '23:59:59', 0),
-(1, 'SUNDAY', '00:00:00', '23:59:59', 0),
-(2, 'MONDAY', '06:00:00', '23:30:00', 0),
-(2, 'TUESDAY', '06:00:00', '23:30:00', 0),
-(2, 'WEDNESDAY', '06:00:00', '23:30:00', 0),
-(2, 'THURSDAY', '06:00:00', '23:30:00', 0),
-(2, 'FRIDAY', '06:00:00', '23:30:00', 0),
-(2, 'SATURDAY', '06:00:00', '23:30:00', 0),
-(2, 'SUNDAY', '06:00:00', '23:30:00', 0),
-(3, 'MONDAY', '00:00:00', '23:59:59', 0),
-(3, 'TUESDAY', '00:00:00', '23:59:59', 0),
-(3, 'WEDNESDAY', '00:00:00', '23:59:59', 0),
-(3, 'THURSDAY', '00:00:00', '23:59:59', 0),
-(3, 'FRIDAY', '00:00:00', '23:59:59', 0),
-(3, 'SATURDAY', '00:00:00', '23:59:59', 0),
-(3, 'SUNDAY', '00:00:00', '23:59:59', 0);
-
--- 15. Airport Maps & Waypoints (Artos Map 1 & Map 2 Layouts)
-INSERT INTO `airport_map` (`map_id`, `airport_id`, `map_name`, `map_type`, `map_version`, `coordinate_reference_system`, `map_status`) VALUES
-(1, 1, 'DEL Airfield Radar Layout (Map 1)', 'AIRPORT_LAYOUT', '2.0', 'SCREEN_PIXELS_1000x1000', 'ACTIVE'),
-(2, 3, 'BOM Airfield Radar Layout (Map 2)', 'AIRPORT_LAYOUT', '2.0', 'SCREEN_PIXELS_1000x1000', 'ACTIVE');
-
--- Waypoints from Artos Map 1 (DEL)
-INSERT INTO `map_feature` (`feature_id`, `map_id`, `feature_type`, `feature_name`, `pos_x`, `pos_y`) VALUES
-(1, 1, 'WAYPOINT', 'WP-101 (Apron North)', 125, 120),
-(2, 1, 'WAYPOINT', 'WP-102 (Taxiway Alpha)', 125, 200),
-(3, 1, 'WAYPOINT', 'WP-103 (Taxiway Bravo)', 125, 500),
-(4, 1, 'WAYPOINT', 'WP-104 (Apron South)', 125, 700),
-(5, 1, 'WAYPOINT', 'WP-201 (Mid Kilo)', 300, 200),
-(6, 1, 'WAYPOINT', 'WP-202 (Intersection)', 412, 480),
-(7, 1, 'WAYPOINT', 'WP-301 (Runway 1 Threshold)', 600, 0),
-(8, 1, 'WAYPOINT', 'WP-302 (Runway 2 End)', 1000, 300),
-(9, 1, 'WAYPOINT', 'WP-303 (Runway 3 End)', 1000, 0),
--- Waypoints from Artos Map 2 (BOM)
-(10, 2, 'WAYPOINT', 'WP-B1 (Apron East)', 800, 600),
-(11, 2, 'WAYPOINT', 'WP-B2 (Taxiway Echo)', 800, 400),
-(12, 2, 'WAYPOINT', 'WP-B3 (Taxiway Sierra)', 170, 400),
-(13, 2, 'WAYPOINT', 'WP-B4 (Runway 9 Threshold)', 100, 200),
-(14, 2, 'WAYPOINT', 'WP-B5 (Runway 10 Threshold)', 200, 500);
-
--- 16. Confirmed Runway Assignments (Triggers will automatically log to assignment_audit)
-INSERT INTO `runway_assignment` (`assignment_id`, `operation_id`, `direction_id`, `assignment_datetime`, `assignment_status`, `assigned_by`, `remarks`) VALUES
--- Operation 1: AI-101 TAKEOFF at DEL -> Assigned Runway 28 (Direction 4)
-(1, 1, 4, '2026-10-27 05:15:00', 'CONFIRMED', 'OPERATOR_ALPHA', 'Assigned south parallel runway 28 for prompt departure'),
-
--- Operation 2: AI-101 LANDING at BOM -> Assigned Runway 27 (Direction 12)
-(2, 2, 12, '2026-10-27 07:45:00', 'CONFIRMED', 'OPERATOR_BETA', 'Main east-west runway approach vector'),
-
--- Operation 5: AI-161 TAKEOFF at DEL (Heavy 787-9) -> Assigned Runway 29 (Direction 6)
-(3, 5, 6, '2026-10-27 01:30:00', 'CONFIRMED', 'DISPATCHER_DEL', 'Heavy departure routed to longest northern runway 11/29'),
-
--- Operation 6: AI-161 LANDING at LHR -> Assigned Runway 27R (Direction 8)
-(4, 6, 8, '2026-10-27 06:30:00', 'CONFIRMED', 'TOWER_LHR', 'Standard morning arrival flow 27R'),
-
--- Operation 9: BA-142 TAKEOFF at DEL -> Assigned Runway 28 (Direction 4)
-(5, 9, 4, '2026-10-27 02:45:00', 'CONFIRMED', 'DISPATCHER_DEL', 'Approved widebody departure slot');
-
--- Operations 3, 4, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 remain UNASSIGNED
--- for live demonstration of manual assignment and validation checking!
 
 -- =============================================================================
--- VERIFICATION SUMMARY
+-- INSTALLATION VERIFICATION
 -- =============================================================================
-SELECT 'AURORA DATABASE INITIALIZATION COMPLETE' AS `Status`;
+SELECT 'AURORA INITIALIZATION COMPLETE' AS `status`;
 
-SELECT 
-  'Airlines' AS `Entity`, COUNT(*) AS `Total_Rows` FROM `airline`
-UNION ALL
-SELECT 'Aircraft Types', COUNT(*) FROM `aircraft_type`
-UNION ALL
-SELECT 'Aircraft Airframes', COUNT(*) FROM `aircraft`
-UNION ALL
-SELECT 'Airports', COUNT(*) FROM `airport`
-UNION ALL
-SELECT 'Physical Runways', COUNT(*) FROM `runway`
-UNION ALL
-SELECT 'Runway Directions (Vectors)', COUNT(*) FROM `runway_direction`
-UNION ALL
-SELECT 'Taxiways', COUNT(*) FROM `taxiway`
-UNION ALL
-SELECT 'Terminals', COUNT(*) FROM `terminal`
-UNION ALL
-SELECT 'Stands & Gates', COUNT(*) FROM `aircraft_stand`
-UNION ALL
-SELECT 'Scheduled Flights', COUNT(*) FROM `flight`
-UNION ALL
-SELECT 'Predefined Operations', COUNT(*) FROM `flight_operation`
-UNION ALL
-SELECT 'Compatibility Matrix', COUNT(*) FROM `aircraft_runway_compatibility`
-UNION ALL
-SELECT 'Runway Restrictions', COUNT(*) FROM `runway_restriction`
-UNION ALL
-SELECT 'Operating Hours', COUNT(*) FROM `airport_operating_hours`
-UNION ALL
-SELECT 'Runway Assignments', COUNT(*) FROM `runway_assignment`
-UNION ALL
-SELECT 'Airport Maps', COUNT(*) FROM `airport_map`
-UNION ALL
-SELECT 'Map Features / Waypoints', COUNT(*) FROM `map_feature`
-UNION ALL
-SELECT 'Assignment Audit Logs (Via Triggers)', COUNT(*) FROM `assignment_audit`;
+SELECT
+  SUM(`table_name` NOT IN ('app_user', 'app_role', 'app_permission', 'role_permission')) AS `operational_tables`,
+  SUM(`table_name` IN ('app_user', 'app_role', 'app_permission', 'role_permission')) AS `rbac_tables`
+FROM information_schema.tables
+WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE';
+
+SELECT COUNT(*) AS `view_count`
+FROM information_schema.views
+WHERE table_schema = DATABASE();
+
+SELECT COUNT(*) AS `trigger_count`
+FROM information_schema.triggers
+WHERE trigger_schema = DATABASE();
+
+SHOW TABLES;
+SHOW TRIGGERS;

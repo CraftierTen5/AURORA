@@ -6,6 +6,20 @@ This provides deterministic validation with clear reasons, NEVER automatic alloc
 
 from db import fetch_one, fetch_all
 
+
+def _one(query, params, cursor=None):
+    if cursor is None:
+        return fetch_one(query, params)
+    cursor.execute(query, params)
+    return cursor.fetchone()
+
+
+def _all(query, params, cursor=None):
+    if cursor is None:
+        return fetch_all(query, params)
+    cursor.execute(query, params)
+    return cursor.fetchall()
+
 class ValidationResult:
     def __init__(self, is_valid, reason, details=None):
         self.is_valid = is_valid
@@ -16,7 +30,7 @@ class ValidationResult:
         status = "PASSED" if self.is_valid else "FAILED"
         return f"<ValidationResult [{status}]: {self.reason}>"
 
-def validate_runway_assignment(operation_id, direction_id):
+def validate_runway_assignment(operation_id, direction_id, cursor=None):
     """
     Validates whether a flight operation can legally be assigned to a runway direction.
     Enforces academic DBMS constraints:
@@ -49,7 +63,9 @@ def validate_runway_assignment(operation_id, direction_id):
      JOIN airport ap ON fo.airport_id = ap.airport_id
      WHERE fo.operation_id = %s
     """
-    operation = fetch_one(op_query, (operation_id,))
+    if cursor is not None:
+        op_query += " FOR UPDATE"
+    operation = _one(op_query, (operation_id,), cursor)
     if not operation:
         return ValidationResult(False, f"Operation ID {operation_id} not found in database.")
 
@@ -74,7 +90,9 @@ def validate_runway_assignment(operation_id, direction_id):
      JOIN airport ap ON rw.airport_id = ap.airport_id
      WHERE rd.direction_id = %s
     """
-    direction = fetch_one(dir_query, (direction_id,))
+    if cursor is not None:
+        dir_query += " FOR UPDATE"
+    direction = _one(dir_query, (direction_id,), cursor)
     if not direction:
         return ValidationResult(False, f"Runway Direction ID {direction_id} not found in database.")
 
@@ -117,7 +135,7 @@ def validate_runway_assignment(operation_id, direction_id):
     FROM aircraft_runway_compatibility
     WHERE type_id = %s AND runway_id = %s
     """
-    compat = fetch_one(compat_query, (operation["type_id"], direction["runway_id"]))
+    compat = _one(compat_query, (operation["type_id"], direction["runway_id"]), cursor)
     if not compat:
         return ValidationResult(
             False,
@@ -150,7 +168,9 @@ def validate_runway_assignment(operation_id, direction_id):
       AND restriction_status IN ('SCHEDULED', 'ACTIVE')
       AND %s BETWEEN start_datetime AND end_datetime
     """
-    restriction = fetch_one(rest_query, (direction["runway_id"], sched_time))
+    if cursor is not None:
+        rest_query += " FOR UPDATE"
+    restriction = _one(rest_query, (direction["runway_id"], sched_time), cursor)
     if restriction:
         return ValidationResult(
             False,

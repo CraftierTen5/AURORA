@@ -6,7 +6,7 @@
 
 ## 1. Schema Overview
 
-AURORA uses **18 normalized InnoDB tables** in MySQL 8.0+ organised into four logical groups:
+AURORA uses **18 operational InnoDB tables** plus **4 RBAC tables** in MySQL 8.0+. The operational relations are grouped into four domains; views are separate query objects and do not count as base tables.
 
 | Group | Tables |
 |---|---|
@@ -14,6 +14,7 @@ AURORA uses **18 normalized InnoDB tables** in MySQL 8.0+ organised into four lo
 | Airport Infrastructure | `airport`, `runway`, `runway_direction`, `taxiway`, `terminal`, `aircraft_stand` |
 | Operations | `flight`, `flight_operation`, `runway_assignment`, `assignment_audit` |
 | Rules & Metadata | `aircraft_runway_compatibility`, `runway_restriction`, `airport_operating_hours`, `airport_map`, `map_feature` |
+| Application Security | `app_user`, `app_role`, `app_permission`, `role_permission` (four additional RBAC tables) |
 
 ---
 
@@ -36,7 +37,7 @@ Separates an individual landing or takeoff event from the flight record itself.
 - A single `flight` may produce multiple `flight_operation` rows (e.g., outbound + return, or a diversion) — the relationship is intentionally *one-to-many*.
 
 ### `runway_assignment`
-Links a `flight_operation` to a specific `runway_direction` with status tracking (`PENDING`, `CONFIRMED`, `CANCELLED`). The `assigned_by` column records the operator who made the manual assignment — important for the audit trigger chain.
+Links a `flight_operation` to a specific `runway_direction` with status tracking (`PROPOSED`, `CONFIRMED`, `CANCELLED`). The `assigned_by` column records the operator who made the manual assignment — important for the audit trigger chain.
 
 ### `aircraft_runway_compatibility`
 A composite-key table `(type_id, runway_id)` acting as an explicit eligibility matrix. Columns `landing_eligible` and `takeoff_eligible` are TINYINT(1) booleans. The `validator.py` module queries this table at runtime to explain why a proposed assignment is or is not valid.
@@ -116,7 +117,7 @@ GROUP BY ap.airport_id, ap.iata_code, ap.icao_code, ap.airport_name, ap.city, ap
 
 ## 4. Triggers — Automated Audit Trail
 
-Three `AFTER` triggers on `runway_assignment` write immutably to `assignment_audit`:
+Three `AFTER` triggers on `runway_assignment` write to `assignment_audit`. Two additional `BEFORE` triggers enforce distinct flight origin/destination airports; these use `SIGNAL SQLSTATE '45000'` because MySQL does not permit the relevant `CHECK` constraint to reference those foreign-key columns.
 
 | Trigger | Event | OLD columns | NEW columns |
 |---|---|---|---|
@@ -124,9 +125,9 @@ Three `AFTER` triggers on `runway_assignment` write immutably to `assignment_aud
 | `trg_after_assignment_update` | UPDATE | prior direction & status | new direction & status |
 | `trg_after_assignment_delete` | DELETE | `direction_id`, `assignment_status` | NULL / `'DELETED'` |
 
-**Why `AFTER` and not `BEFORE`?** `AFTER` triggers fire once the write has succeeded and the new row is committed; this guarantees the audit row reflects a real state change. A `BEFORE` trigger could log a change that subsequently fails a constraint.
+**Why `AFTER` for the audit triggers and `BEFORE` for route validation?** The audit triggers fire after the assignment write succeeds, so the audit row reflects the attempted state transition; they remain part of the same transaction. The route-integrity triggers run before the flight write and reject identical endpoints before they are stored.
 
-The triggers provide the **before-image / after-image** pattern described in transaction logging (Korth §19): they are the closest equivalent to WAL-style change data capture available at the application level in MySQL.
+The AFTER INSERT, AFTER UPDATE, and AFTER DELETE triggers append assignment events to `assignment_audit` within the same transaction as the triggering change. A rollback therefore also rolls back the corresponding audit row. This is trigger-based audit history, not a replacement for InnoDB's internal redo/undo logging.
 
 ---
 
@@ -139,11 +140,11 @@ The triggers provide the **before-image / after-image** pattern described in tra
 | **1NF** | No repeating groups; all attributes atomic | `runway_direction` stores one heading per row, not a comma-list inside `runway` |
 | **2NF** | 1NF + no partial dependency on a composite key | `aircraft_runway_compatibility (type_id, runway_id)` — every non-key attribute (`landing_eligible`, `takeoff_eligible`, `remarks`) depends on the *full* composite key |
 | **3NF** | 2NF + no transitive dependency | `flight_operation` stores `airport_id`; airport details (city, timezone) live only in `airport` — no transitive `operation_id → airport_id → timezone` stored redundancy |
-| **BCNF** | Every determinant is a superkey | `runway_direction (runway_id, designation)` has unique constraint; designation determines heading, so the FD `{runway_id, designation} → heading` is determined by a superkey |
+| **BCNF** | Every determinant in every non-trivial FD is a superkey | The unique key `(runway_id, designation)` demonstrates one such determinant in `runway_direction`. This example alone does **not** prove that every relation is in BCNF; a complete claim requires listing candidate keys and all relevant FDs for each relation. |
 
 ### 5.2 Functional Dependencies & Armstrong's Axioms
 
-Functional dependencies (FDs) formally modelled in AURORA (excerpt):
+Functional dependencies (FDs) supported by declared keys and intended semantics (illustrative excerpt; verify each relation's complete FD set before making a global normal-form claim):
 
 ```
 airline_id → airline_name, iata_code, icao_code, country, callsign
@@ -211,9 +212,9 @@ COMMIT;
 ### 5.7 Views as Virtual Relations
 
 Views in AURORA are **non-materialized virtual relations** (Korth §4.2). They:
-- Present a simplified, task-specific schema to the application layer without exposing join complexity.
-- Are **updateable only if** they map 1:1 to a single base table with no aggregation — Views 1–3 are read-only because they span multiple tables; View 4 is read-only due to `GROUP BY`.
-- Enforce a **security boundary**: application code queries `view_scheduled_arrivals` and never needs direct access to `flight_operation` or `runway_assignment`.
+- Present a simplified, task-specific schema without repeating joins in every consumer query.
+- Are read-only in the current application workflow; the multi-table joins and aggregation make the current views unsuitable for direct updates.
+- Improve query organization, but are not by themselves a security boundary. The current role checks are enforced by the desktop application; direct database access still depends on MySQL account privileges.
 
 ---
 
@@ -221,17 +222,15 @@ Views in AURORA are **non-materialized virtual relations** (Korth §4.2). They:
 
 | Layer | Technology | Version / Notes |
 |---|---|---|
-| **Primary Database** | MySQL 8.0+ (InnoDB) | Preferred target; 18 tables, FK enforcement, triggers, views |
-| **Offline Fallback DB** | SQLite 3 (stdlib) | Auto-activated when MySQL is unreachable; seeded with identical DFW/BOM data via `db.py` |
-| **DB Connector** | `db.py` (custom dual-mode) | Tries `mysql-connector-python` first; falls back to `sqlite3`; exposes `fetch_all`, `fetch_one`, `execute` with dict-cursor rows |
-| **Validation Engine** | `validator.py` | Queries `aircraft_runway_compatibility`, `runway_restriction`, `runway_direction`; returns structured pass/fail reasons |
-| **Runtime Language** | Python 3.14.8 | CPython; no external web frameworks |
-| **UI Framework** | pygame-ce 2.5.8 (SDL 2.32.10) | Desktop radar simulation; preserves original Artos 1000×1000 layout, fonts, grid, collision avoidance |
-| **Environment Config** | `python-dotenv` / `.env` | DB host, port, user, password, database name kept out of source |
-| **Schema Migration** | `database/aurora_workbench_full.sql` | Single idempotent DDL+seed script for MySQL Workbench or CLI |
-| **Seed / Demo Data** | `database/seed.sql` | Isolated seed-only file; covers DFW (Map 1) and BOM (Map 2) operations |
-| **Test Suite** | `tests/test_validation.py` | 12 unit tests using `unittest`; all passing (0 failures) |
-| **Documentation** | `docs/` directory | `RELATIONAL_SCHEMA.md`, `queries.sql`, `AURORA_DATABASE_REPORT.md` |
+| **Database** | MySQL 8.0+ / InnoDB | 18 operational tables + 4 RBAC tables, four views, indexes and audit triggers |
+| **Database handoff** | `database/aurora_workbench_full.sql` | Single-file clean-rebuild installer for the teammate's Workbench setup; generated from `schema.sql` + `seed.sql` |
+| **DB access** | `db.py` | MySQL-only connection and transaction helpers; no hidden SQLite fallback |
+| **Authentication** | `auth.py` | PBKDF2-HMAC-SHA256 password verification and database-backed role/permission checks |
+| **Validation** | `validator.py` | Validates runway eligibility, restrictions and airport alignment; can run inside the assignment transaction |
+| **Runtime language** | Python 3.10+ | Pygame desktop application |
+| **UI framework** | Pygame | Role-specific login, controller console and read-only customer departures board |
+| **Environment config** | `python-dotenv` / `.env` | MySQL connection settings kept out of source |
+| **Tests** | `tests/` | Database-backed runway validation suite and isolated authentication unit tests |
 
 > **Scope note:** AURORA does not implement dynamic runway allocation, AI scheduling, or real-time ATC. All operations have predefined scheduled times. Runway assignments are entered manually by the user and validated (not auto-assigned) against the compatibility and restriction tables. This is an academic demonstrator of relational database concepts, not a certified aviation safety system.
 

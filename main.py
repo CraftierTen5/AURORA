@@ -1,11 +1,24 @@
 """
-AURORA — Aircraft & Unified Runway Operations Records Archive
-Primary Execution Entry Point
+AURORA — Airport Runway & Operations Management
+Desktop application entry point
 Runs the Pygame Desktop Application.
 """
 
-import sys
 import os
+import sys
+
+# Establish DPI awareness before pygame/SDL is imported. Otherwise Windows may
+# bitmap-scale the fixed-size Pygame window and make text look blurred.
+if sys.platform == "win32":
+    os.environ.setdefault("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2")
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except (AttributeError, OSError):
+            ctypes.windll.user32.SetProcessDPIAware()
+    except (AttributeError, OSError):
+        pass
 
 def check_environment():
     """Validates runtime prerequisites and reports helpful hints."""

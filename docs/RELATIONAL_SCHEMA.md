@@ -1,5 +1,5 @@
 # AURORA — Relational Schema & Normalization Analysis
-### Aircraft & Unified Runway Operations Records Archive
+### Airport Runway & Operations Management
 *Academic DBMS Course Design Documentation*
 
 ---
@@ -87,49 +87,44 @@ Below is the formal relational schema notation. Primary keys are marked with `[P
     `audit_id` [PK], `assignment_id`, `operation_id`, `old_direction_id`, `new_direction_id`, `old_status`, `new_status`, `action_type`, `changed_by`, `changed_at`
 )
 
+19. **`APP_ROLE`** (
+   `role_id` [PK], `role_code` [UQ], `role_name`
+)
+
+20. **`APP_PERMISSION`** (
+   `permission_id` [PK], `permission_code` [UQ], `permission_name`
+)
+
+21. **`ROLE_PERMISSION`** (
+   `role_id` [PK, FK -> `APP_ROLE.role_id`], `permission_id` [PK, FK -> `APP_PERMISSION.permission_id`]
+)
+
+22. **`APP_USER`** (
+   `user_id` [PK], `username` [UQ], `password_hash`, `password_salt`, `role_id` [FK -> `APP_ROLE.role_id`], `is_active`, `created_at`, `last_login_at`
+)
+
 ---
 
 ## 2. Normalization Analysis (1NF to BCNF)
 
+The following is a defensible analysis of representative relations, not a blanket claim that all 22 relations have been formally proven to BCNF. A full proof requires the complete set of functional dependencies and candidate keys for each relation.
+
 ### First Normal Form (1NF)
-* **Criterion:** All attributes contain atomic, non-composite, single-valued domain entries; there are no repeating groups.
-* **Analysis:**
-  - In `AIRCRAFT_TYPE`, dimensions (wingspan, length, weights) are isolated into individual DECIMAL scalar columns.
-  - In `RUNWAY`, multidimensional coordinate bounds (`start_x`, `start_y`, `end_x`, `end_y`) and operational heading are individual numeric primitives.
-  - Multi-stop flights or multiple runways are never stored as comma-separated strings inside a single row. Instead, separate rows in `RUNWAY_DIRECTION` and `FLIGHT_OPERATION` are maintained.
-* **Conclusion:** Satisfies 1NF.
+- Most operational attributes are stored as single typed columns (for example, one runway direction and heading per row).
+- The exception to discuss is `MAP_FEATURE.properties_json`: it stores a structured JSON document. It is one SQL column, but if its internal members are treated as relational attributes, the design is not strictly atomic. This is a deliberate flexible metadata field and should be acknowledged in the viva.
 
 ### Second Normal Form (2NF)
-* **Criterion:** The relation is in 1NF and every non-prime attribute is fully functionally dependent on the entire candidate key (no partial key dependencies).
-* **Analysis:**
-  - Tables with single-column surrogate primary keys (`aircraft_id`, `airport_id`, `operation_id`, etc.) automatically satisfy 2NF because partial dependency is impossible when the candidate key consists of a single attribute.
-  - In composite key table `AIRCRAFT_RUNWAY_COMPATIBILITY` (`type_id`, `runway_id`):
-    - `landing_eligible` and `takeoff_eligible` depend strictly on both the aircraft type AND the specific runway strip simultaneously:
-      $$\{\text{type\_id}, \text{runway\_id}\} \rightarrow \{\text{landing\_eligible}, \text{takeoff\_eligible}, \text{remarks}\}$$
-    - Neither attribute depends solely on `type_id` nor solely on `runway_id`.
-* **Conclusion:** Satisfies 2NF.
+- Relations with a single-attribute candidate key cannot have partial dependency on a proper subset of that key.
+- The composite-key relation `AIRCRAFT_RUNWAY_COMPATIBILITY(type_id, runway_id)` is the clearest demonstration: eligibility and remarks depend on the aircraft-type/runway pair, not on either side alone.
+- `ROLE_PERMISSION(role_id, permission_id)` is a pure junction relation with a composite primary key and no non-key attributes.
 
 ### Third Normal Form (3NF)
-* **Criterion:** The relation is in 2NF and no non-prime attribute is transitively dependent on the primary key (no $X \rightarrow Y$ and $Y \rightarrow Z$ where $X$ is key and $Y, Z$ are non-prime).
-* **Analysis:**
-  - Notice the design of `AIRCRAFT`:
-    - Instead of storing `aircraft_model`, `wingspan`, and `passenger_capacity` directly in `AIRCRAFT`, those attributes are segregated into `AIRCRAFT_TYPE`.
-    - If they were stored in `AIRCRAFT`, we would have had:
-      $$\text{aircraft\_id} \rightarrow \text{model} \rightarrow \text{wingspan}$$
-      which is a transitive dependency violating 3NF!
-    - By decoupling `AIRCRAFT_TYPE` from `AIRCRAFT`, transitive dependencies are completely eliminated.
-  - Similarly, `RUNWAY_DIRECTION` links to `RUNWAY`, and `RUNWAY` links to `AIRPORT`. `FLIGHT_OPERATION` tracks the airport directly while the runway direction is only referenced during assignment.
-* **Conclusion:** Satisfies 3NF.
+- Aircraft model specifications are stored in `AIRCRAFT_TYPE`, rather than repeated on each `AIRCRAFT` row. This avoids storing manufacturer/model specifications redundantly for every individual airframe.
+- Airport descriptive attributes remain in `AIRPORT`; operational records reference the airport by key rather than copying its name, city and timezone.
 
 ### Boyce-Codd Normal Form (BCNF)
-* **Criterion:** For every non-trivial functional dependency $X \rightarrow Y$, $X$ must be a superkey.
-* **Analysis:**
-  - In `AIRCRAFT`: `registration_number` is a candidate key. Both `aircraft_id` and `registration_number` are superkeys.
-  - In `AIRLINE`: `airline_id` is PK; `iata_code` and `icao_code` have UNIQUE constraints and act as alternative candidate keys.
-  - In `RUNWAY_DIRECTION`: PK is `direction_id`; alternative candidate key is (`runway_id`, `designation`). All determinants are superkeys.
-* **Conclusion:** Satisfies BCNF.
-
----
+- A declared unique key such as `RUNWAY_DIRECTION(runway_id, designation)` is a candidate key and therefore a superkey; the corresponding FD to heading and direction permissions satisfies the BCNF determinant condition.
+- This example does not establish BCNF for every relation. The complete proof must inspect all non-trivial FDs, including those arising from composite candidate keys such as `AIRCRAFT_TYPE(manufacturer, model, variant)`.
 
 ## 3. Referential Actions & Integrity Policies
 

@@ -2,7 +2,7 @@
 -- AURORA: Aircraft & Unified Runway Operations Records Archive
 -- Relational Database DDL Schema (MySQL 8.0+ / 8.4 LTS Compatible)
 -- Engine: InnoDB | Character Set: utf8mb4 | Collation: utf8mb4_unicode_ci
--- Integrates with Artos 2D Pygame Radar Visualizer & Operations Suite
+-- Integrates with AURORA 2D Pygame Radar Visualizer & Operations Suite
 -- =============================================================================
 
 CREATE DATABASE IF NOT EXISTS `aurora_db`
@@ -14,6 +14,10 @@ USE `aurora_db`;
 -- Set session flags for strict schema generation
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `assignment_audit`;
+DROP TABLE IF EXISTS `app_user`;
+DROP TABLE IF EXISTS `role_permission`;
+DROP TABLE IF EXISTS `app_permission`;
+DROP TABLE IF EXISTS `app_role`;
 DROP TABLE IF EXISTS `runway_assignment`;
 DROP TABLE IF EXISTS `aircraft_runway_compatibility`;
 DROP TABLE IF EXISTS `runway_restriction`;
@@ -261,10 +265,9 @@ CREATE TABLE `flight` (
   CONSTRAINT `fk_flight_aircraft` FOREIGN KEY (`aircraft_id`)
     REFERENCES `aircraft` (`aircraft_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_flight_origin` FOREIGN KEY (`origin_airport_id`)
-    REFERENCES `airport` (`airport_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+    REFERENCES `airport` (`airport_id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `fk_flight_destination` FOREIGN KEY (`destination_airport_id`)
-    REFERENCES `airport` (`airport_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT `chk_flight_endpoints_differ` CHECK (`origin_airport_id` <> `destination_airport_id`)
+    REFERENCES `airport` (`airport_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
@@ -394,7 +397,7 @@ CREATE TABLE `airport_map` (
 
 -- =============================================================================
 -- 17. MAP_FEATURE
--- Individual geographical and radar waypoint features from Artos.
+-- Individual geographical and radar waypoint features from AURORA.
 -- =============================================================================
 CREATE TABLE `map_feature` (
   `feature_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -430,6 +433,41 @@ CREATE TABLE `assignment_audit` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
+-- APPLICATION RBAC (separate from the 18 operational traffic-regulation tables)
+-- =============================================================================
+CREATE TABLE `app_role` (
+  `role_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `role_code` VARCHAR(30) NOT NULL UNIQUE,
+  `role_name` VARCHAR(60) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `app_permission` (
+  `permission_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `permission_code` VARCHAR(60) NOT NULL UNIQUE,
+  `permission_name` VARCHAR(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `role_permission` (
+  `role_id` INT NOT NULL,
+  `permission_id` INT NOT NULL,
+  PRIMARY KEY (`role_id`, `permission_id`),
+  CONSTRAINT `fk_role_permission_role` FOREIGN KEY (`role_id`) REFERENCES `app_role` (`role_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_role_permission_permission` FOREIGN KEY (`permission_id`) REFERENCES `app_permission` (`permission_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `app_user` (
+  `user_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `username` VARCHAR(60) NOT NULL UNIQUE,
+  `password_hash` CHAR(64) NOT NULL,
+  `password_salt` VARCHAR(64) NOT NULL,
+  `role_id` INT NOT NULL,
+  `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_login_at` DATETIME NULL,
+  CONSTRAINT `fk_app_user_role` FOREIGN KEY (`role_id`) REFERENCES `app_role` (`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
 -- INDEXES FOR PERFORMANCE AND ACCESS PATH OPTIMIZATION
 -- =============================================================================
 CREATE INDEX `idx_flight_lookup` ON `flight` (`service_date`, `origin_airport_id`, `destination_airport_id`);
@@ -444,6 +482,27 @@ CREATE INDEX `idx_aircraft_operator` ON `aircraft` (`operator_airline_id`, `airc
 -- AUDIT TRIGGERS
 -- =============================================================================
 DELIMITER $$
+
+-- Enforce distinct origin/destination endpoints without a CHECK/FK column conflict in MySQL.
+CREATE TRIGGER `trg_before_flight_insert`
+BEFORE INSERT ON `flight`
+FOR EACH ROW
+BEGIN
+  IF NEW.`origin_airport_id` = NEW.`destination_airport_id` THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'A flight origin and destination must be different airports';
+  END IF;
+END$$
+
+CREATE TRIGGER `trg_before_flight_update`
+BEFORE UPDATE ON `flight`
+FOR EACH ROW
+BEGIN
+  IF NEW.`origin_airport_id` = NEW.`destination_airport_id` THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'A flight origin and destination must be different airports';
+  END IF;
+END$$
 
 CREATE TRIGGER `trg_after_assignment_insert`
 AFTER INSERT ON `runway_assignment`

@@ -1,99 +1,78 @@
-# Technical Feasibility Study: AURORA Project Tech Stack
-### Aircraft & Unified Runway Operations Records Archive (Artos 2.0 Engine)
-**Course:** Database Management Systems (DBMS) Laboratory & Theory  
-**Institution:** ABV-IIITM Gwalior  
-**Date:** October 2026  
+# AURORA — Technical Feasibility and Architecture Note
 
----
+## 1. Project scope
 
-## 1. Executive Summary
+AURORA is a local desktop DBMS application for a modeled airport network. It stores airline and aircraft data, airport infrastructure, predefined takeoff/landing operations, runway-direction assignments, compatibility rules, restrictions, and assignment audit history.
 
-This feasibility study evaluates the architectural, technical, operational, and economic viability of the technology stack chosen for **AURORA (Aircraft & Unified Runway Operations Records Archive)**. AURORA is an academic relational database application engineered to manage certified aircraft specifications, airline fleets, aerodrome infrastructure (runways, bidirectional vectors, taxiways, terminals, stands), flight service instances, predefined operational landing/takeoff schedules, and validated manual runway assignments.
+The application has two roles:
 
-The chosen technology stack comprises:
-- **Database Management System:** MySQL 8.0+ / 8.4 LTS (InnoDB Storage Engine)
-- **Application & Visualization Layer:** Python 3.10+ & Pygame 2.x (SDL2 Hardware Acceleration)
-- **Database Connectivity:** Python Database API (`mysql-connector-python` / `PyMySQL`) with parameterized query execution
-- **Configuration & Security:** Environment Configuration (`python-dotenv`, `.env`) with Zero Hardcoded Secrets
+- **Administrator / ATC Controller:** operational dashboard, assignment validation, airport map, fleet/infrastructure views, and SQL reports.
+- **Customer:** read-only scheduled departures board.
 
-The evaluation confirms that the stack is **highly feasible, academically rigorous, resource-efficient, and fully aligned with university DBMS evaluation rubrics**.
+This is an academic model. It is not certified aviation software and does not implement real-world separation minima, dynamic runway allocation, or live air-traffic data.
 
----
+## 2. Technology choices
 
-## 2. Technical Feasibility Analysis
+| Layer | Choice | Rationale |
+|---|---|---|
+| Relational DBMS | MySQL 8.0+ with InnoDB | Foreign keys, unique/check constraints, transactions, row locking, views, triggers, and EXPLAIN support the DBMS syllabus and the assignment workflow. |
+| Desktop UI | Python + Pygame | Keeps the project local and avoids a separate web server or frontend build pipeline. |
+| Connectivity | mysql-connector-python / PyMySQL | Standard Python database drivers with parameterized SQL execution. |
+| Authentication | Python PBKDF2-HMAC-SHA256 + MySQL RBAC tables | Passwords are stored as salted hashes; roles resolve named permissions through a junction table. |
+| Configuration | `.env` + python-dotenv | Database connection settings stay outside source control. |
 
-### 2.1 Database Layer: MySQL 8.0+ / 8.4 LTS (InnoDB)
+## 3. Database architecture
 
-| Dimension | Assessment | Feasibility Rating |
-| :--- | :--- | :---: |
-| **Relational Model & Normalization** | Supports full Codd relational requirements, foreign key constraints, composite candidate keys, and multi-table integrity across 18 normalized relations (1NF, 2NF, 3NF, BCNF). | **High** |
-| **ACID Compliance & Transactions** | InnoDB engine provides write-ahead logging (WAL), multi-version concurrency control (MVCC), atomic commit/rollback, and row-level locking. | **High** |
-| **Constraint Enforcement** | Native `CHECK` constraints (e.g. positive dimensions, valid coordinates, chronological time-windows), `UNIQUE` composite keys, and domain constraints. | **High** |
-| **Procedural Extensions & Triggers** | Native support for `BEFORE` and `AFTER` triggers (`INSERT`, `UPDATE`, `DELETE`) to automate audit logging (`assignment_audit`) without application-layer overhead. | **High** |
-| **Query Optimization & Profiling** | MySQL's `EXPLAIN` and execution plan profiling enable demonstration of B-Tree indexing access paths on large datasets. | **High** |
+The model contains:
 
-**Why MySQL over MongoDB/NoSQL?**  
-Aviation runway operations require strict referential integrity (an assignment cannot reference a non-existent runway vector, nor can a flight operate on an incompatible runway). Relational schemas enforce foreign keys, composite domain constraints, and atomic multi-table transactions which NoSQL document stores cannot guarantee without complex application logic.
+- **18 operational tables** covering the traffic-regulation workflow and supporting airport infrastructure, compatibility, schedules, restrictions, assignments, and audit history.
+- **4 RBAC tables:** `app_user`, `app_role`, `app_permission`, and `role_permission`.
+- **4 views** for arrivals, departures, assignment summaries, and airport infrastructure.
+- **7 explicit secondary indexes** and **5 triggers (3 assignment-audit + 2 flight-endpoint integrity)**.
 
----
+Views are virtual query objects and do not count toward the base-table total.
 
-### 2.2 Application & Visualization Layer: Python & Pygame 2.x
+The Workbench handoff script, `database/aurora_workbench_full.sql`, is assembled from `database/schema.sql` and `database/seed.sql`. This keeps the teammate's one-file setup aligned with the developer setup. It is a clean-rebuild script: it drops and recreates the project's objects and reloads demonstration data.
 
-| Dimension | Assessment | Feasibility Rating |
-| :--- | :--- | :---: |
-| **Graphics & Radar Rendering** | Hardware-accelerated SDL2 2D rendering handles radar scan lines, thick runway corridors, taxiway vectors, waypoints, and dynamic heading needles at 30–60 FPS with < 1% CPU utilization. | **High** |
-| **User Experience & Responsiveness** | Event-driven event queue (`pygame.event`) provides instantaneous click-and-inspect responses for flight operations and candidate runway vectors. | **High** |
-| **Heritage & Asset Reuse** | Directly inherits and elevates the visual language and map coordinate assets from **ARTOS 2.0** (`artos_map1.py`, `artos_map2.py`), preventing wasteful rewrites. | **High** |
-| **Memory Footprint** | Pygame application footprint is ~35 MB RAM, compared to Electron/Chromium-based web frontends which require 400 MB to 1 GB RAM. | **High** |
-| **Zero Web/Build Overhead** | Requires zero web servers, npm compilation steps, Webpack/Vite bundlers, or browser-specific polyfills. Executes natively via standard Python. | **High** |
+## 4. Transaction and integrity strategy
 
----
+Runway assignment is a multi-step operation:
 
-### 2.3 Connectivity & Driver Layer: Python DB-API (`mysql-connector-python` & `PyMySQL`)
+1. Read and lock the selected operation and candidate runway direction.
+2. Revalidate airport alignment, direction permissions, runway status, compatibility, and restriction windows inside the transaction.
+3. Insert or update the unique assignment for that operation.
+4. Let the database trigger append the audit event.
+5. Commit all changes together, or roll back if an error occurs.
 
-1. **Security & Parameterization:** All SQL queries are executed with bound parameters (`cursor.execute(sql, (param1, param2))`). String interpolation and SQL concatenation are completely eliminated, securing the application against SQL Injection (SQLi).
-2. **Dual-Mode Reliability:** The database layer implements an intelligent auto-fallback:
-   - Primary: Connects to local or remote MySQL Server (`aurora_db`).
-   - Secondary / Offline: In offline lab settings where MySQL server service is stopped, it gracefully connects to an embedded SQLite mirror (`aurora_local.sqlite`) with identical schema and seed data, preventing evaluation demo crashes.
+The assignment table has a unique constraint on `operation_id`, enforcing at most one current assignment per operation. Foreign keys protect references to operations and runway directions.
 
----
+## 5. RBAC boundary
 
-## 3. Technology Stack Comparison Matrix
+The desktop application checks the user's role permissions before exposing controller navigation or executing assignment actions. The Customer role is seeded with `schedule.read` only; the Administrator role receives the defined application permissions.
 
-| Criteria | AURORA Stack (Python + Pygame + MySQL) | Alternative A (React + Node.js + MongoDB) | Alternative B (Java Swing + PostgreSQL) | Alternative C (Python + Tkinter + MySQL) |
-| :--- | :---: | :---: | :---: | :---: |
-| **Relational DBMS Rigor** | **10/10** (Full MySQL Workbench, Triggers, Views) | 3/10 (Document store lacks relational constraints) | 10/10 (High DBMS rigor) | 9/10 (Standard MySQL) |
-| **Radar/Spatial Visualization** | **10/10** (Hardware-accelerated 2D canvas, smooth rotation) | 7/10 (HTML5 Canvas overhead in DOM) | 5/10 (AWT/Swing 2D is slow and dated) | 4/10 (Tkinter canvas lacks vector rotation performance) |
-| **Startup Speed & Memory** | **< 1.0s / 35 MB** | 6.0s / 450 MB | 3.5s / 180 MB | 1.2s / 40 MB |
-| **External Dependencies** | **3 Python packages** (`pygame`, `mysql-connector`, `dotenv`) | 450+ npm packages (node_modules bloat) | Heavy JDK + Maven dependencies | Minimal |
-| **Artos Project Reusability** | **100% Direct Code & Coordinate Reuse** | 0% (Total rewrite required) | 0% (Total rewrite required) | 20% (Partial logic reuse) |
+This is **application-level RBAC**. Both roles currently use the database connection configured in the local `.env` file. If customers are ever given direct MySQL access, separate MySQL accounts and server-side `GRANT` privileges must also be configured; application checks alone cannot constrain direct SQL access.
 
----
+## 6. Operational feasibility
 
-## 4. Operational Feasibility
+The deployment target is a teammate's laptop with MySQL Server, MySQL Workbench, Python, and the required Python packages installed.
 
-1. **Academic Demonstration Workflow:**
-   - Evaluators can review the relational schema and run queries directly in **MySQL Workbench**.
-   - Team members can launch the Pygame dashboard (`python main.py`) or modernized Artos radar simulation (`python artos_updated.py`) to demonstrate manual assignment and validation.
-2. **Scope Compliance:**
-   - Adheres strictly to the university specification: **no automated AI allocation or dynamic scheduling algorithms**. Runway direction assignments are recorded **manually** by the user and validated by the rule engine.
-3. **Reproducibility:**
-   - The entire database can be completely recreated and seeded in under 3 seconds using the provided SQL script (`aurora_workbench_full.sql`).
+Setup path:
 
----
+1. Run `database/aurora_workbench_full.sql` in MySQL Workbench.
+2. Copy `.env.example` to `.env` and configure the local MySQL connection.
+3. Install dependencies with `python -m pip install -r requirements.txt`.
+4. Launch with `python main.py`.
 
-## 5. Economic & Resource Feasibility
+AURORA deliberately has no SQLite fallback. A hidden local database could diverge from the database created in Workbench and produce misleading demonstration results.
 
-| Item | Cost | Justification |
-| :--- | :---: | :--- |
-| **MySQL Community Server 8.0+** | \$0.00 | Open source (GPL v2). Free for academic and personal development. |
-| **Python & Pygame Runtime** | \$0.00 | Open source (PSF / LGPL). Zero licensing obligations. |
-| **Development IDEs (Workbench / VS Code)** | \$0.00 | Free community licenses. |
-| **Hosting & Cloud Costs** | \$0.00 | Runs 100% locally on standard student laptops. |
-| **Total Project Expenditure** | **\$0.00** | **100% Economically Feasible** |
+## 7. Limitations and future improvements
 
----
+- The airport and runway data are demonstration records, not authoritative aeronautical data.
+- Compatibility checks use a simplified eligibility matrix; they are not aircraft performance calculations.
+- The customer role is restricted in the desktop application, not by separate MySQL grants.
+- Demo credentials are included for classroom evaluation and should be changed before any real deployment.
+- A future production-oriented version would need account-management screens, password-change/reset flows, server-side database privileges, stronger session handling, and additional concurrency tests.
 
-## 6. Conclusion & Recommendation
+## 8. Conclusion
 
-The proposed tech stack of **MySQL 8.0+ (InnoDB) + Python 3 + Pygame 2.x** is **feasible across all technical, operational, and economic criteria**. It preserves the graphics and simulation heritage of ARTOS while delivering a robust, normalized relational architecture suitable for rigorous evaluation in university Database Management Systems coursework.
+The chosen stack is feasible for a local academic DBMS demonstration. MySQL provides the relational integrity and transaction mechanisms required by the model, while Python/Pygame provides a self-contained desktop interface. The single-file Workbench installer makes the database reproducible on the teammate's computer, and the role-specific UI demonstrates application authorization without changing the operational schema's scope.
