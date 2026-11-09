@@ -60,7 +60,8 @@ class AuroraApp:
         self.login_password = ""
         self.login_active_field = "username"
         self.login_message = ""
-        self.login_button = Button((480, 520, 240, 48), "SIGN IN", self.font_hdr,
+        login_layout = self.get_login_layout()
+        self.login_button = Button(login_layout["button"], "SIGN IN", self.font_hdr,
                                    on_click=self.on_login, bg_color=(31, 111, 148))
         self.logout_button = Button((1050, 13, 125, 36), "SIGN OUT", self.font_sub,
                                     on_click=self.logout)
@@ -139,11 +140,13 @@ class AuroraApp:
 
     def handle_login_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if pygame.Rect(390, 340, 420, 48).collidepoint(event.pos):
+            layout = self.get_login_layout()
+            if layout["username"].collidepoint(event.pos):
                 self.login_active_field = "username"
-            elif pygame.Rect(390, 410, 420, 48).collidepoint(event.pos):
+            elif layout["password"].collidepoint(event.pos):
                 self.login_active_field = "password"
             else:
+                self.login_button.rect = layout["button"]
                 self.login_button.handle_event(event)
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_TAB:
@@ -657,6 +660,35 @@ class AuroraApp:
         pygame.quit()
         sys.exit()
 
+    def get_login_layout(self):
+        """Return centered login geometry shared by drawing and mouse handling."""
+        form_width = 420
+        button_width = 240
+        content_top = 86
+        group_height = 365
+
+        form_x = (WINDOW_WIDTH - form_width) // 2
+        button_x = (WINDOW_WIDTH - button_width) // 2
+        group_top = content_top + max(
+            36, ((WINDOW_HEIGHT - content_top) - group_height) // 2
+        )
+
+        username_y = group_top + 88
+        password_y = username_y + 70
+        button_y = password_y + 86
+        hint_y = group_top + group_height - 8
+
+        return {
+            "form_x": form_x,
+            "title": (form_x, group_top),
+            "subtitle": (form_x, group_top + 34),
+            "username": pygame.Rect(form_x, username_y, form_width, 48),
+            "password": pygame.Rect(form_x, password_y, form_width, 48),
+            "button": pygame.Rect(button_x, button_y, button_width, 48),
+            "message": (form_x, button_y + 58),
+            "hint_y": hint_y,
+        }
+
     def draw_login(self):
         self.screen.fill(COLOR_BG)
         pygame.draw.rect(self.screen, COLOR_PANEL, (0, 0, WINDOW_WIDTH, 86))
@@ -664,29 +696,49 @@ class AuroraApp:
         tagline = self.font_main.render("AIRPORT OPERATIONS & DEPARTURE INFORMATION", True, COLOR_TEXT_MUTED)
         self.screen.blit(brand, (56, 22))
         self.screen.blit(tagline, (190, 29))
+
+        layout = self.get_login_layout()
         title = self.font_title.render("Welcome back", True, COLOR_TEXT_WHITE)
-        subtitle = self.font_main.render("Sign in to continue to the airport operations system.", True, COLOR_TEXT_MUTED)
-        self.screen.blit(title, (390, 245))
-        self.screen.blit(subtitle, (390, 278))
-        for label, value, y, active in [
-            ("USERNAME", self.login_username, 340, self.login_active_field == "username"),
-            ("PASSWORD", "*" * len(self.login_password), 410, self.login_active_field == "password")
+        subtitle = self.font_main.render(
+            "Sign in to continue to the airport operations system.",
+            True, COLOR_TEXT_MUTED
+        )
+        self.screen.blit(title, layout["title"])
+        self.screen.blit(subtitle, layout["subtitle"])
+
+        for label, value, rect, active in [
+            ("USERNAME", self.login_username, layout["username"],
+             self.login_active_field == "username"),
+            ("PASSWORD", "*" * len(self.login_password), layout["password"],
+             self.login_active_field == "password"),
         ]:
             lbl = self.font_sub.render(label, True, COLOR_TEXT_MUTED)
-            self.screen.blit(lbl, (390, y - 22))
-            rect = pygame.Rect(390, y, 420, 48)
+            self.screen.blit(lbl, (rect.x, rect.y - 22))
             pygame.draw.rect(self.screen, COLOR_PANEL, rect, border_radius=7)
-            pygame.draw.rect(self.screen, COLOR_ACCENT_CYAN if active else (52, 67, 84), rect, 2, border_radius=7)
-            value_surf = self.font_main.render(value or ("Enter " + label.lower()), True,
-                                                COLOR_TEXT_WHITE if value else COLOR_TEXT_MUTED)
-            self.screen.blit(value_surf, (408, y + 14))
+            pygame.draw.rect(
+                self.screen,
+                COLOR_ACCENT_CYAN if active else (52, 67, 84),
+                rect, 2, border_radius=7
+            )
+            value_surf = self.font_main.render(
+                value or ("Enter " + label.lower()), True,
+                COLOR_TEXT_WHITE if value else COLOR_TEXT_MUTED
+            )
+            self.screen.blit(value_surf, (rect.x + 18, rect.y + 14))
+
+        self.login_button.rect = layout["button"]
         self.login_button.draw(self.screen)
+
         if self.login_message:
             msg = self.font_sub.render(self.login_message[:90], True, COLOR_ALERT_RED)
-            self.screen.blit(msg, (390, 585))
-        hint = self.font_sub.render("DEMO ACCOUNTS  |  admin / AuroraAdmin!2026   •   customer / AuroraGuest!2026",
-                                    True, COLOR_TEXT_MUTED)
-        self.screen.blit(hint, (330, 650))
+            self.screen.blit(msg, layout["message"])
+
+        hint = self.font_sub.render(
+            "DEMO ACCOUNTS  |  admin / AuroraAdmin!2026   •   customer / AuroraGuest!2026",
+            True, COLOR_TEXT_MUTED
+        )
+        hint_rect = hint.get_rect(center=(WINDOW_WIDTH // 2, layout["hint_y"]))
+        self.screen.blit(hint, hint_rect)
 
     def draw_customer(self):
         self.screen.fill(COLOR_BG)
